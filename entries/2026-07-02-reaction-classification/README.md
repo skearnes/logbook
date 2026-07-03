@@ -1,4 +1,4 @@
-# 2026-07-02 — Reaction classification against the RXNO ontology
+# 2026-07-02 — Reaction classification for the ORD pipeline
 
 ## Question
 
@@ -44,8 +44,12 @@ Revised recommendation, by the resolution you actually need:
    coauthor). An agentic-LLM pipeline that self-expands a *verified* SMIRKS taxonomy to
    ~1,546 L3 types / 14k classes and matches NameRxn accuracy (~97.7%). It emits its
    **own** dotted codes, not NameRxn's/RXNO IDs, but at near-NameRxn resolution, fully
-   open. Brand-new (1-day-old preprint); the LLM expansion layer needs a Gemini API key,
-   though the deterministic classifier + released rules run offline.
+   open. **Now verified hands-on** (2026-07-02, dedicated section below): the released
+   classifier runs **fully offline** (`rdkit`/`torch`/`numpy` — no LLM, no atom mapping)
+   and hits **~20x Rxn-INSIGHT's throughput** at *higher* specific-label coverage on 1,572
+   ORD reactions. The Gemini layer built the taxonomy offline and is not needed at
+   inference. Practical ceiling is its **6,962 trained classes** (not the headline 14k),
+   and its codes are its own taxonomy, not RXNO/NameRxn IDs.
 3. **Need the full ~1000 NameRxn leaves with exact codes/RXNO IDs → license NameRxn.**
    Still the only turnkey path to complete leaf-level coverage.
 
@@ -252,6 +256,102 @@ classifier + released rules run offline).
 beyond that the proprietary ceiling holds — unless you accept a self-generated taxonomy
 like the ReactionClassifier's.
 
+## ReactionClassifier, hands-on: offline, cost, and coverage (verified 2026-07-02)
+
+Same-day follow-up: pulled the actual repo (`schwallergroup/ReactionClassifier`, MIT,
+`v0.1.0` on PyPI) and benchmarked it head-to-head against the production Rxn-INSIGHT path
+on **1,572 real ORD reactions** (sampled from `ord-data`, atom maps stripped to unmapped
+canonical SMILES, single CPU process, isolated venv, on the dev Mac). Three things are now
+settled.
+
+### It runs fully offline — no LLM at inference
+
+The shipped `classify()` path is:
+
+```text
+reaction SMILES
+  -> RDKit Morgan diff+product fingerprint (radius 2, 2x2048 -> 4096-dim)
+  -> 22 MB MLP gate (predicts 1 of 6,962 classes)
+  -> RDKit template matching over the predicted class's tier-3 subtree
+  -> emit a label only if a shipped template reproduces the recorded product,
+     else abstain and expose an (unverified) neural guess
+```
+
+- **Dependencies are only `rdkit`, `torch`, `numpy`.** No `transformers`, no `rxnmapper`,
+  no Gemini, no network, **no atom mapping**. The Gemini-3 multi-agent layer wrote the
+  taxonomy and SMIRKS rules *offline, once*; it is not in the inference loop (confirmed
+  from the repo source — the paper abstract is coy about this).
+- **Everything needed ships in the wheel (~35 MB):** the gate `model.pt` (22 MB, trained
+  on 628,870 reactions), **54,857 exact `rr0rp1_ring0` templates** across 6,962 classes
+  (`class_to_templates.json`, 12.6 MB), and a 14,060-entry `taxonomy.json`.
+- **Two caveats.** (1) The full *generalised*-SMIRKS library is **withheld** — only the
+  exact templates ship, so the generalized-rule layer can't be reproduced or extended. (2)
+  Operational resolution is the **6,962** classes that had training data, not the paper's
+  headline 14,073; and the codes are its **own** taxonomy, not NameRxn/RXNO IDs.
+
+### Cost: ~20x Rxn-INSIGHT, and it drops the atom-mapping transformer
+
+Both on the same 1,572 ORD reactions, one CPU process on the same machine:
+
+| Metric | **ReactionClassifier** | **Rxn-INSIGHT (current)** |
+| --- | --- | --- |
+| Throughput | **169.8 rxn/s** | 8.6 rxn/s |
+| Wall-clock, 1,572 rxns | 9.3 s | 183 s |
+| Median / p90 latency | 2.1 / 13.2 ms | 113 / 141 ms |
+| Model load | 1.3 s | 3.5 s |
+| Specific label | **58.7%** confirmed (922) | 51.4% named (808) |
+| Fallback / coarse-only | 41.3% neural guess | 48.5% class-only |
+| Failed | 0 | 2 (0.1%) |
+| Peak RSS / process | 1,380 MB | 461 MB |
+| Taxonomy resolution | 6,962 classes | ~528 named / 10 super |
+| Heavy deps | rdkit, torch, numpy | + transformers, rxnmapper (ALBERT) |
+
+**Read of it:**
+
+- **~20x throughput.** The lever is architecture, exactly as scoped above: Rxn-INSIGHT runs
+  the **ALBERT atom-mapping transformer per reaction** (its documented weak spot *and* its
+  heavy dependency); ReactionClassifier does an MLP forward pass + bounded RDKit template
+  matching and **needs no atom mapping at all**. That directly answers the "heavyweight for
+  ORD-scale" worry — the transformer, the `[reaction-class]` fork pins, and the 4-worker
+  memory cap all disappear.
+- **Coverage is actually *higher*.** It deterministically confirms a **verified** label on
+  58.7% of reactions vs Rxn-INSIGHT's 51.4% specific-name rate — at ~13x finer taxonomy —
+  and abstains *transparently* (with a low-confidence flag) on the rest instead of silently
+  emitting a coarse label.
+- **Memory: honest correction.** The pre-benchmark prediction was that it would be lighter
+  on memory too. It isn't, per process: **1,380 MB vs 461 MB**, driven by RDKit compiling
+  matched SMIRKS into its template cache (not a transformer). So the win is **throughput +
+  operational simplicity**, not raw RSS. Per *unit throughput* it is still far leaner (one
+  RXC process ≈ 20 Rxn-INSIGHT workers), the RSS is tunable (the compile `lru_cache`), and
+  neither pipeline needs a GPU.
+
+### Example outputs (identical input to both)
+
+| Reaction | ReactionClassifier (confirmed code → name) | Rxn-INSIGHT (class → name) |
+| --- | --- | --- |
+| Amide coupling `CC(=O)O.NCc1ccccc1>>CC(=O)NCc1ccccc1` | `2.1.2.1` Amidation using carboxylic acids → primary amine + acid to secondary amide | Acylation → carboxylic acid with primary amine to amide |
+| Suzuki `OB(O)c1ccccc1.Brc1ccccc1>>c1ccc(-c2ccccc2)cc1` | `3.1.1.1.1` C(sp²)-C(sp²) coupling → classic Suzuki (aryl bromide + boronic acid) | C-C Coupling → Suzuki coupling with boronic acids |
+| SNAr `OCC1CNC1.COc1cnc(Cl)cc1>>COc1cnc(N2CC(CO)C2)cc1` | `1.3.5.5` SNAr → electron-deficient heteroaryl halide + secondary amine | Heteroatom Alkylation/Arylation → **Ullmann-Goldberg** amine |
+| Nitro reduction `O=[N+]([O-])c1ccccc1>>Nc1ccccc1` | `6.1.11.1` Reduction of nitrobenzenes to anilines | Reduction → reduction of nitro groups to amines |
+| Boc protection `(Boc)₂O + NCc1ccccc1 >> Boc-NHCc1ccccc1` | `2.4.1.3.1.1` Carbamate formation → primary amine + dicarbonate | Protection → Boc amine protection with Boc anhydride |
+| Ester saponification `CCOC(=O)c1ccccc1>>O=C(O)c1ccccc1` | `5.1.4.1.1` Cleave carboxylic-acid PG → cleave methyl/ethyl ester | Deprotection → ester saponification |
+| ORD SNAr amination `N#Cc1c(Cl)nc(Cl)nc1Cl.CCN>>…` | `1.3.6.1` Amination of heteroaryl halides → + primary aliphatic amine | Heteroatom Alkylation/Arylation → N-arylation (Buchwald-Hartwig/Ullmann) |
+| ORD barbituric condensation `O=C1CC(=O)NC(=O)N1.NC(N)=O>>…` | **abstains** (`None`); neural guess `2.1.1.12` at conf **0.17** | Aromatic Heterocycle Formation → `OtherReaction` |
+
+Two things to notice: (1) on clean named reactions the two agree on the chemistry but
+ReactionClassifier lands a **much finer, structured leaf** (and its `neural_code` equals the
+confirmed code at ~1.0 confidence); (2) they can *disagree on mechanism* (the SNAr row: SNAr
+vs Ullmann-Goldberg) — a label-quality question, not a coverage one. The last row is the
+honest failure mode: an ambiguous condensation where **both** decline — ReactionClassifier
+abstains and *flags it* with 0.17 confidence, Rxn-INSIGHT returns `OtherReaction`.
+
+### Verdict
+
+Offline viability and cost are **settled**: offline; ~20x faster; simpler deps; higher
+confirmed coverage; no atom-mapping model. What's **not** settled is label *quality* at scale
+(the mechanism disagreements above) and whether to crosswalk its private codes to
+RXNO/NameRxn. Those, plus the granularity choice, are the remaining decisions.
+
 ## Fallback: RXNO crosswalk of Rxn-INSIGHT names
 
 Kept for the case where you retain Rxn-INSIGHT for its human-readable named reactions and
@@ -280,11 +380,15 @@ but this remains low-effort and additive if you keep Rxn-INSIGHT:
   sample of our reactions, write the 50 `N.N.N` codes (+ names via `rxnclass2name.json`, +
   RXNO IDs) into a new `derived.reaction_classes` column, and compare labels against the
   current Rxn-INSIGHT output.
-- **Evaluate the Schwaller ReactionClassifier** on a batch of ORD reactions — check
-  coverage/quality vs Rxn-INSIGHT and whether the finer taxonomy justifies the Gemini
-  dependency. If it holds up, it could replace both Rxn-INSIGHT and the crosswalk.
-- **Pick the granularity target** (10 superclasses → 50 leaves → ~1,500 → full ~967
-  NameRxn); that choice selects the path. Only the last needs a NameRxn license.
+- **ReactionClassifier: offline viability and cost now verified** (section above) — runs
+  offline, ~20x faster than Rxn-INSIGHT, 58.7% deterministically-confirmed coverage vs
+  Rxn-INSIGHT's 51.4% named on 1,572 ORD reactions. Remaining work: a **label-quality
+  audit** at scale (do the finer codes agree with Rxn-INSIGHT / chemist judgement, e.g. the
+  SNAr-vs-Ullmann disagreement?), and decide whether to **map its codes → RXNO/NameRxn**
+  (its taxonomy is its own). If quality holds, it can replace both Rxn-INSIGHT and the
+  crosswalk.
+- **Pick the granularity target** (10 superclasses → 50 leaves → ~6,962 ReactionClassifier
+  → full ~967 NameRxn); that choice selects the path. Only the last needs a NameRxn license.
 - Pilot **RXNMapper_v2** in an isolated env to see if better mappings lift Rxn-INSIGHT
   classification; keep it out of the production dependency until it has published numbers
   and a PyPI release.
@@ -321,7 +425,7 @@ RXNO OWL — a small, bounded lookup step, not automatic. Skip it entirely if yo
 NameRxn codes and don't actually need RXNO IDs.
 
 **Decision still open (owner: Steven).** The granularity target — 10 superclasses / 50
-NameRxn leaves / ~1,500 (ReactionClassifier) / full ~967 (license NameRxn) — is unmade,
+NameRxn leaves / ~6,962 (ReactionClassifier) / full ~967 (license NameRxn) — is unmade,
 and that choice selects the path. Nothing below the full-967 tier needs a paid license.
 
 ## References
@@ -347,7 +451,8 @@ and that choice selects the path. Nothing below the full-967 tier needs a paid l
 - HuggingFace 10-class model:
   <https://huggingface.co/pingzhili/chemberta-v2-finetuned-uspto-50k-classification>
 - Schwaller ReactionClassifier (2026): paper <https://arxiv.org/abs/2607.01061>, repo
-  <https://github.com/schwallergroup/ReactionClassifier>
+  <https://github.com/schwallergroup/ReactionClassifier>, PyPI
+  <https://pypi.org/project/reactionclassifier/> (v0.1.0, MIT)
 - NameRxn / Pistachio (proprietary, ~967 classes):
   <https://www.nextmovesoftware.com/namerxn.html>,
   <https://www.nextmovesoftware.com/pistachio.html>

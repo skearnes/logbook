@@ -1,15 +1,18 @@
 # Logbook
 
-A running work logbook. Each entry is a dated Markdown file under
-[`entries/`](entries/), named `YYYY-MM-DD-topic.md` so the topic is visible at
-a glance.
+A running work logbook. Each entry is a dated directory under
+[`entries/`](entries/), named `YYYY-MM-DD-topic/`, holding a `README.md` with
+the writeup plus any assets (images, scripts, data) for that entry.
 
 ## Conventions
 
-- Start a new entry by copying [`TEMPLATE.md`](TEMPLATE.md) into `entries/`.
-- Name each file `entries/YYYY-MM-DD-topic.md` (e.g.
-  `entries/2026-03-14-pi-day.md`).
-- Begin each entry with an H1 title covering the date and topic.
+- Start a new entry by creating `entries/YYYY-MM-DD-topic/` and copying
+  [`TEMPLATE.md`](TEMPLATE.md) into it as `README.md`.
+- Name each directory `entries/YYYY-MM-DD-topic/` (e.g.
+  `entries/2026-03-14-pi-day/`).
+- Keep entry assets (images, scripts, data) in the same directory and link to
+  them with relative paths from the `README.md`.
+- Begin each entry's `README.md` with an H1 title covering the date and topic.
 - Use H2 sections within an entry as needed.
 
 ## Linting

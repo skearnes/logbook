@@ -6,8 +6,9 @@ a glance.
 
 ## Conventions
 
-- One file per entry: `entries/YYYY-MM-DD-topic.md` (e.g.
-  `entries/2026-07-02-logbook-setup.md`).
+- Start a new entry by copying [`TEMPLATE.md`](TEMPLATE.md) into `entries/`.
+- Name each file `entries/YYYY-MM-DD-topic.md` (e.g.
+  `entries/2026-03-14-pi-day.md`).
 - Begin each entry with an H1 title covering the date and topic.
 - Use H2 sections within an entry as needed.
 

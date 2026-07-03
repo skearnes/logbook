@@ -6,7 +6,12 @@
     // Prose lines wrap naturally; don't enforce a hard line length.
     "MD013": false,
     // Allow repeated headings under different parents (e.g. "Notes" per section).
-    "MD024": { "siblings_only": true }
+    "MD024": { "siblings_only": true },
+    // Cosmetic; don't enforce asterisk vs. underscore for emphasis/strong.
+    "MD049": false,
+    "MD050": false,
+    // Cosmetic; don't require padding spaces around table pipes.
+    "MD060": false
   },
   "ignores": ["node_modules"]
 }

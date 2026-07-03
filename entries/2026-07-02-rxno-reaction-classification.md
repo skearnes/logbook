@@ -290,6 +290,40 @@ but this remains low-effort and additive if you keep Rxn-INSIGHT:
   and a PyPI release.
 - Fold the `rxn4chemistry/rxnmapper` 0.4.3 pin bump into the fork as routine hygiene.
 
+## For the next session (handoff)
+
+**Where things live.** All repos are siblings under `~/github/ord/`: `ord-schema`
+(classification code + ORM), `ord-interface` (search API/UI + local-DB tooling), `ord-app`
+(frontend), `ord-data` (datasets), `ord-infrastructure` (Pulumi). Python runs in the
+**`ord` conda env** (`~/mambaforge/envs/ord`); its `bin/initdb` and Postgres binaries drive
+the local DB, *not* the system PATH.
+
+**How classification runs today.** Install the extra into the env:
+`pip install ord-schema[reaction-class]` (pulls the `skearnes/Rxn-INSIGHT` fork pinned at
+commit `eb71946`, plus rxnmapper). Then
+`python -m ord_schema.orm.scripts.add_datasets --classify_reactions ...` populates
+`derived.reaction_classes`. The classifier entry points are `classify_reaction_smiles` and
+`update_reaction_classes` in `ord-schema/ord_schema/orm/reaction_class.py`. A local/test
+Postgres is built via `setup_test_postgres`
+(`ord-interface/ord_interface/client/build_database.py`).
+
+**Open question before committing to option 1 (rxnfp path).** Verify whether the rxnfp
+repo ships a *ready-to-run Schneider classifier checkpoint* or only reaction fingerprints
+you must fit a head on. The ~98% figure quoted in the landscape is the *Pistachio* number;
+confirm the *Schneider-50k* accuracy and the actual load/predict API
+(`rxn4chemistry/rxnfp`, Zenodo weights) before scoping the work. DRFP is the fallback
+(fingerprint + your own MLP — definitely train-your-own).
+
+**RXNO-mapping caveat — don't assume it's free.** Public Schneider data has the `N.N.N`
+codes and names but **not** RXNO IDs. Turning a code into `RXNO:xxxxxxx` needs a crosswalk,
+most cheaply by matching the NameRxn class *name* (from `rxnclass2name.json`) against the
+RXNO OWL — a small, bounded lookup step, not automatic. Skip it entirely if you only need
+NameRxn codes and don't actually need RXNO IDs.
+
+**Decision still open (owner: Steven).** The granularity target — 10 superclasses / 50
+NameRxn leaves / ~1,500 (ReactionClassifier) / full ~967 (license NameRxn) — is unmade,
+and that choice selects the path. Nothing below the full-967 tier needs a paid license.
+
 ## References
 
 - Rxn-INSIGHT: paper <https://pmc.ncbi.nlm.nih.gov/articles/PMC10980627/>, repo

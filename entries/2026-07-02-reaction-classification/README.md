@@ -384,6 +384,67 @@ Still open: a label-**quality** audit at scale (the SNAr-vs-Ullmann-type disagre
 whether ORD wants NameRxn/RXNO codes (→ SynCat) or eponymous/fine labels (→ Rxn-INSIGHT /
 ReactionClassifier). The granularity decision now has four concrete, measured options.
 
+## Mapping ReactionClassifier → RXNO (scoped and drafted, 2026-07-03)
+
+If ReactionClassifier is the strongest base classifier, can we bolt **RXNO IDs** onto its
+output — native fine codes *plus* a standards-compliant ontology label? Scoped it end to end
+and built a **draft crosswalk over all 6,926 classes**.
+
+### First, NameRxn ≠ RXNO
+
+- **RXNO** is an open **ontology** (RSC, CC-BY): **653** native reaction terms, opaque IDs
+  (`RXNO:0000140`), **named-reaction-dominated**; generic transforms are delegated to the
+  companion **MOP** ontology or simply absent.
+- **NameRxn** is a proprietary **classifier** that emits `N.N.N` codes *and* the matching RXNO
+  ID (`3.1.1 → RXNO:0000140`); it is the practical labeler for RXNO but the two are not
+  coextensive (NameRxn ~1,000+ leaves vs RXNO ~653 terms; the code→ID table is proprietary).
+- Checked against OLS: Suzuki, Buchwald-Hartwig, Sonogashira, Boc protection, nitro reduction,
+  reductive amination, Williamson all have RXNO IDs; **"saponification" has none**;
+  **"N-arylation" resolves only to a MOP term**. RXNO covers named reactions richly (it even
+  has Buchwald-Hartwig, which the *open 50-class* NameRxn subset lacks) but skips much generic
+  chemistry.
+
+### The crosswalk (two passes)
+
+6,926 RXC classes → 653 RXNO terms is many-to-one, bounded by RXNO, not by RXC's count.
+
+| Coverage (of 6,926 classes) | string/synonym match | **LLM pass (47 agents)** |
+| --- | --- | --- |
+| any RXNO id | 51% | 50% |
+| **specific** (non-umbrella) | 15% | **40%** |
+| RXNO recall | 116/653 | **243/653** |
+| **ORD-weighted specific** | 7% | **38%** |
+
+The naive string matcher collapsed onto broad umbrella nodes (1,165 heterocycle classes → the
+single "heterocycle synthesis" term); only **7%** of ORD reactions got a *specific* RXNO ID.
+The **LLM pass** (one judgment per description, full RXNO vocab in context, `sonnet`) ~5×'d
+that to **38%**, more than doubled RXNO recall, and correctly returned **null** for generic
+transforms instead of forcing umbrella matches. Sample high-confidence maps: Sonogashira,
+Buchwald-Hartwig (recovered even from "N-arylation with aryl sulfonates"), Strecker, Appel,
+Gabriel, piperazine/piperidine/pyrrolidine synthesis, Williamson.
+
+### Two ceilings
+
+- **Coverage — RXNO's design.** ~**48%** of ORD reactions have *no* RXNO term (the LLM confirms
+  null): generic protections, deprotections, redox, and FGI live in MOP or nowhere. No
+  classifier or effort changes this; RXNO is named-reaction-only.
+- **Quality — unaudited.** The benchmark examples show the texture: Suzuki → `RXNO:0000140`,
+  nitro reduction → `RXNO:0000337`, heteroaryl amination → `RXNO:0000372` (all high confidence)
+  — but Boc protection → "N-acylation to carbamate" (medium; a chemist would prefer
+  `RXNO:0000079 Boc protection`) and amide coupling → null. ~55% of the maps are low-confidence
+  and need review.
+
+### Verdict
+
+RXC→RXNO is the best open path to **fine RXNO IDs on the named-reaction slice** — ~38% of ORD
+reactions get a *specific* RXNO named reaction (Suzuki/Buchwald/Sonogashira/…), well beyond the
+50-class NameRxn models, and the draft map already exists. But it is **not** a blanket RXNO
+labeling: ~half of ORD chemistry has no RXNO term, so the right design is **dual-label** —
+always emit RXC's native code, attach the RXNO ID where a high-confidence specific match
+exists. Remaining work: chemist review of the medium/low-confidence maps (the Boc-style
+near-misses), then decide whether ~38% specific RXNO coverage justifies the crosswalk vs
+SynCat's cheaper coarse NameRxn codes. Scripts + the draft map: [`bench/crosswalk/`](bench/crosswalk/).
+
 ## Fallback: RXNO crosswalk of Rxn-INSIGHT names
 
 Kept for the case where you retain Rxn-INSIGHT for its human-readable named reactions and
@@ -424,6 +485,11 @@ but this remains low-effort and additive if you keep Rxn-INSIGHT:
   needs a trivial head (0.994) and runs ~186 rxn/s. Both cap at 50 classes and can't abstain.
   If ORD wants standard NameRxn codes, **pilot SynCat next**; if it wants eponymous or fine
   labels, that's Rxn-INSIGHT / ReactionClassifier.
+- **RXC→RXNO crosswalk drafted** (section above; `bench/crosswalk/`) — LLM pass maps ~38% of
+  ORD reactions to a *specific* RXNO named reaction, ~48% have no RXNO term. Remaining: a
+  chemist review of the medium/low-confidence maps (e.g. Boc → "N-acylation to carbamate"
+  should be `RXNO:0000079`), then decide dual-labeling (native RXC code + RXNO where confident)
+  vs the cheaper SynCat NameRxn path.
 - **Pick the granularity target** (10 superclasses → 50 leaves → ~6,962 ReactionClassifier
   → full ~967 NameRxn); that choice selects the path. Only the last needs a NameRxn license.
 - Pilot **RXNMapper_v2** in an isolated env to see if better mappings lift Rxn-INSIGHT

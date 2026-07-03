@@ -33,9 +33,9 @@ ceiling** (9 of the 10 superclasses, 28 categories, 50 hand-picked leaves). The 
 Revised recommendation, by the resolution you actually need:
 
 1. **~50 NameRxn leaf classes is enough → train/run on Schneider-50k (recommended).**
-   Pretrained **rxnfp** ships a Schneider classifier (~98%) that emits real NameRxn
-   `N.N.N` codes you can run today; **DRFP** or **SynCat** (2026 SOTA) train to the same
-   50 classes. All MIT. This is a clean jump from today's 10 Rxn-INSIGHT superclasses to
+   **SynCat** (2026 SOTA) *ships* a ready-to-run Schneider model (MIT, atom-mapping-free);
+   **rxnfp** needs a trivial head trained on its bundled fingerprints (0.994 here) and
+   **DRFP** trains its own — all emit real NameRxn `N.N.N` codes. All MIT (benchmarked below). This is a clean jump from today's 10 Rxn-INSIGHT superclasses to
    50 named leaves (plus the superclass/category levels for free by truncating the code),
    and — because the labels *are* NameRxn codes — it **supersedes the original
    "crosswalk Rxn-INSIGHT names → RXNO" idea** for emitting machine-readable classes.
@@ -256,13 +256,17 @@ classifier + released rules run offline).
 beyond that the proprietary ceiling holds — unless you accept a self-generated taxonomy
 like the ReactionClassifier's.
 
-## ReactionClassifier, hands-on: offline, cost, and coverage (verified 2026-07-02)
+## Hands-on benchmark: four classifiers — cost, coverage, and names (2026-07-02)
 
-Same-day follow-up: pulled the actual repo (`schwallergroup/ReactionClassifier`, MIT,
-`v0.1.0` on PyPI) and benchmarked it head-to-head against the production Rxn-INSIGHT path
-on **1,572 real ORD reactions** (sampled from `ord-data`, atom maps stripped to unmapped
-canonical SMILES, single CPU process, isolated venv, on the dev Mac). Three things are now
-settled.
+Follow-up prompted by two questions: is ReactionClassifier really offline/cheap, and are the
+open **NameRxn-code** classifiers (rxnfp, SynCat) more *useful* than its private taxonomy —
+i.e. do they emit recognizable named reactions? Benchmarked all four on the **same 1,572 real
+ORD reactions** (sampled from `ord-data`, atom maps stripped to unmapped canonical SMILES;
+single CPU process, isolated venv, dev Mac). For the two 50-class models, names come from
+NameRxn's `rxnclass2name.json`; the rxnfp head was trained on the bundled Schneider-50k
+fingerprints (**0.994** test acc) and SynCat runs its **shipped** `model_schneider.pt`
+(index→code map calibrated on Schneider test, **0.976** recovered; paper reports 0.988).
+Scripts and a reproduction guide are kept alongside this entry in [`bench/`](bench/).
 
 ### It runs fully offline — no LLM at inference
 
@@ -289,68 +293,96 @@ reaction SMILES
   Operational resolution is the **6,962** classes that had training data, not the paper's
   headline 14,073; and the codes are its **own** taxonomy, not NameRxn/RXNO IDs.
 
-### Cost: ~20x Rxn-INSIGHT, and it drops the atom-mapping transformer
+### Benchmark: all four on the same 1,572 reactions
 
-Both on the same 1,572 ORD reactions, one CPU process on the same machine:
+| Metric | ReactionClassifier | Rxn-INSIGHT | rxnfp + head | SynCat |
+| --- | --- | --- | --- | --- |
+| Throughput (rxn/s) | 169.8 | 8.6 | **186.1** | 112.1 |
+| Median latency | 2.1 ms | 113 ms | 5.1 ms | — (batch 8) |
+| Peak RSS / process | 1,380 MB | 461 MB | 622 MB | **367 MB** |
+| Label space | 6,962 own | ~528 named / 10 super | 50 NameRxn | 50 NameRxn |
+| Names | structured/descriptive | **eponymous** (Buchwald, Suzuki…) | NameRxn (part eponymous) | NameRxn (part eponymous) |
+| Abstains? | yes (template-confirm) | partial (`OtherReaction`) | **no** | **no** |
+| Atom mapping | no | **yes** (ALBERT) | no (small BERT fp) | no |
+| Accuracy | 58.7% confirmed on ORD¹ | 51.4% named on ORD¹ | 0.994 Schneider² | 0.976 / 0.988 Schneider² |
+| Extra deps | rdkit, torch, numpy | + transformers, rxnmapper | + transformers (bert_ft) | + torch_geometric |
 
-| Metric | **ReactionClassifier** | **Rxn-INSIGHT (current)** |
-| --- | --- | --- |
-| Throughput | **169.8 rxn/s** | 8.6 rxn/s |
-| Wall-clock, 1,572 rxns | 9.3 s | 183 s |
-| Median / p90 latency | 2.1 / 13.2 ms | 113 / 141 ms |
-| Model load | 1.3 s | 3.5 s |
-| Specific label | **58.7%** confirmed (922) | 51.4% named (808) |
-| Fallback / coarse-only | 41.3% neural guess | 48.5% class-only |
-| Failed | 0 | 2 (0.1%) |
-| Peak RSS / process | 1,380 MB | 461 MB |
-| Taxonomy resolution | 6,962 classes | ~528 named / 10 super |
-| Heavy deps | rdkit, torch, numpy | + transformers, rxnmapper (ALBERT) |
+¹ specific-label rate on the ORD sample (abstention / `OtherReaction` counts against it).
+² held-out Schneider-50k accuracy — *not* comparable to the ORD rate; the 50-class models
+always emit a label, so they have no ORD "coverage" number.
 
 **Read of it:**
 
-- **~20x throughput.** The lever is architecture, exactly as scoped above: Rxn-INSIGHT runs
-  the **ALBERT atom-mapping transformer per reaction** (its documented weak spot *and* its
-  heavy dependency); ReactionClassifier does an MLP forward pass + bounded RDKit template
-  matching and **needs no atom mapping at all**. That directly answers the "heavyweight for
-  ORD-scale" worry — the transformer, the `[reaction-class]` fork pins, and the 4-worker
-  memory cap all disappear.
-- **Coverage is actually *higher*.** It deterministically confirms a **verified** label on
-  58.7% of reactions vs Rxn-INSIGHT's 51.4% specific-name rate — at ~13x finer taxonomy —
-  and abstains *transparently* (with a low-confidence flag) on the rest instead of silently
-  emitting a coarse label.
-- **Memory: honest correction.** The pre-benchmark prediction was that it would be lighter
-  on memory too. It isn't, per process: **1,380 MB vs 461 MB**, driven by RDKit compiling
-  matched SMIRKS into its template cache (not a transformer). So the win is **throughput +
-  operational simplicity**, not raw RSS. Per *unit throughput* it is still far leaner (one
-  RXC process ≈ 20 Rxn-INSIGHT workers), the RSS is tunable (the compile `lru_cache`), and
-  neither pipeline needs a GPU.
+- **Speed splits by architecture, not "ML vs rules."** rxnfp (186) ≈ ReactionClassifier
+  (170) > SynCat (112) ≫ Rxn-INSIGHT (8.6). Rxn-INSIGHT is the outlier because it runs the
+  **ALBERT atom-mapping transformer per reaction** (its documented weak spot and its heavy
+  dependency); everything else skips atom mapping — answering the "heavyweight for ORD-scale"
+  worry. Correcting an earlier assumption: rxnfp is **not** transformer-heavy — `bert_ft` is a
+  *small* BERT (256-dim, vocab 591), so its fingerprint pass is as cheap as an MLP. SynCat's
+  cost is **RDKit featurization**, not the 1.8 MB GNN.
+- **Memory: SynCat lightest (367 MB), ReactionClassifier heaviest (1,380 MB).** The RXC bloat
+  is RDKit compiling matched SMIRKS into its template cache (tunable `lru_cache`), not a model
+  — so the earlier prediction that RXC would be memory-light was wrong; its win is throughput +
+  simplicity, and memory *per unit throughput* (one process ≈ 20 Rxn-INSIGHT workers). None
+  needs a GPU.
+- **Only the "own-taxonomy" models can abstain.** ReactionClassifier withholds a label (and
+  flags low confidence) when nothing fits; Rxn-INSIGHT falls back to `OtherReaction`. The
+  50-class NameRxn models **cannot** — they force every reaction into one of 50 classes, so
+  they are *confidently wrong* on out-of-scope chemistry (the barbituric row below).
 
-### Example outputs (identical input to both)
+### Example outputs (identical input to all four)
 
-| Reaction | ReactionClassifier (confirmed code → name) | Rxn-INSIGHT (class → name) |
-| --- | --- | --- |
-| Amide coupling `CC(=O)O.NCc1ccccc1>>CC(=O)NCc1ccccc1` | `2.1.2.1` Amidation using carboxylic acids → primary amine + acid to secondary amide | Acylation → carboxylic acid with primary amine to amide |
-| Suzuki `OB(O)c1ccccc1.Brc1ccccc1>>c1ccc(-c2ccccc2)cc1` | `3.1.1.1.1` C(sp²)-C(sp²) coupling → classic Suzuki (aryl bromide + boronic acid) | C-C Coupling → Suzuki coupling with boronic acids |
-| SNAr `OCC1CNC1.COc1cnc(Cl)cc1>>COc1cnc(N2CC(CO)C2)cc1` | `1.3.5.5` SNAr → electron-deficient heteroaryl halide + secondary amine | Heteroatom Alkylation/Arylation → **Ullmann-Goldberg** amine |
-| Nitro reduction `O=[N+]([O-])c1ccccc1>>Nc1ccccc1` | `6.1.11.1` Reduction of nitrobenzenes to anilines | Reduction → reduction of nitro groups to amines |
-| Boc protection `(Boc)₂O + NCc1ccccc1 >> Boc-NHCc1ccccc1` | `2.4.1.3.1.1` Carbamate formation → primary amine + dicarbonate | Protection → Boc amine protection with Boc anhydride |
-| Ester saponification `CCOC(=O)c1ccccc1>>O=C(O)c1ccccc1` | `5.1.4.1.1` Cleave carboxylic-acid PG → cleave methyl/ethyl ester | Deprotection → ester saponification |
-| ORD SNAr amination `N#Cc1c(Cl)nc(Cl)nc1Cl.CCN>>…` | `1.3.6.1` Amination of heteroaryl halides → + primary aliphatic amine | Heteroatom Alkylation/Arylation → N-arylation (Buchwald-Hartwig/Ullmann) |
-| ORD barbituric condensation `O=C1CC(=O)NC(=O)N1.NC(N)=O>>…` | **abstains** (`None`); neural guess `2.1.1.12` at conf **0.17** | Aromatic Heterocycle Formation → `OtherReaction` |
+| Reaction | ReactionClassifier | Rxn-INSIGHT | rxnfp | SynCat |
+| --- | --- | --- | --- | --- |
+| Amide coupling | `2.1.2.1` 1° amine + acid → 2° amide | Acylation → acid + primary amine to amide | `2.1.2` Carboxylic acid + amine | `2.1.2` Carboxylic acid + amine |
+| Suzuki | `3.1.1.1.1` classic Suzuki (aryl Br + boronic acid) | C-C Coupling → **Suzuki** coupling | `3.1.5` Bromo **Suzuki**-type | `3.1.5` Bromo **Suzuki**-type |
+| SNAr / N-arylation | `1.3.5.5` SNAr, heteroaryl halide + 2° amine | → **Ullmann-Goldberg** amine | `1.3.7` Chloro N-arylation | `1.3.7` Chloro N-arylation |
+| Nitro reduction | `6.1.11.1` nitrobenzene → aniline | Reduction → nitro → amine | `7.1.1` Nitro to amino | `7.1.1` Nitro to amino |
+| Boc protection | `2.4.1.3.1.1` carbamate, amine + dicarbonate | Protection → **Boc** w/ Boc anhydride | `5.1.1` **N-Boc** protection | `5.1.1` **N-Boc** protection |
+| Ester saponification | `5.1.4.1.1` cleave methyl/ethyl ester | Deprotection → **saponification** | `6.2.1` CO2H-Et deprotection | `6.2.1` CO2H-Et deprotection |
+| ORD SNAr amination | `1.3.6.1` amination of heteroaryl halides | → N-arylation (**Buchwald**/Ullmann) | `1.3.7` Chloro N-arylation | `1.3.7` Chloro N-arylation |
+| ORD barbituric condensation | **abstains**; guess `2.1.1.12` conf **0.17** | Heterocycle formation → `OtherReaction` | `2.6.1` Ester Schotten-Baumann ✗ | `6.3.7` Methoxy to hydroxy ✗ |
 
-Two things to notice: (1) on clean named reactions the two agree on the chemistry but
-ReactionClassifier lands a **much finer, structured leaf** (and its `neural_code` equals the
-confirmed code at ~1.0 confidence); (2) they can *disagree on mechanism* (the SNAr row: SNAr
-vs Ullmann-Goldberg) — a label-quality question, not a coverage one. The last row is the
-honest failure mode: an ambiguous condensation where **both** decline — ReactionClassifier
-abstains and *flags it* with 0.17 confidence, Rxn-INSIGHT returns `OtherReaction`.
+- **rxnfp and SynCat agree on every clean reaction** (both are Schneider-50k models) and give
+  standard, **RXNO-mappable** NameRxn codes. They diverge only on the out-of-scope barbituric
+  case — where **both are confidently wrong**, in different ways, because neither can abstain.
+- **Named reactions / the Buchwald point.** The NameRxn-50 scheme *does* carry eponymous names
+  (Suzuki, Sonogashira, Stille, Mitsunobu, Williamson, Schotten-Baumann, Fischer-Speier) — but
+  it has **no Buchwald-Hartwig / Ullmann / Heck class**; amine arylations collapse to generic
+  "Bromo/Chloro N-arylation." Only **Rxn-INSIGHT** annotates "Buchwald" here (its own
+  vocabulary); the discrete Buchwald leaf otherwise lives only in proprietary NameRxn.
+- ReactionClassifier lands the **finest, most structured** leaf, but with descriptive not
+  eponymous names — and can **disagree on mechanism** (SNAr vs Ullmann-Goldberg for the
+  N-arylation), a label-quality question worth an audit.
+
+### rxnfp and SynCat: what actually ships (open question resolved)
+
+- **rxnfp ships *no* ready-to-run 50-class classifier** — only fingerprint models (`bert_ft`)
+  and a 1k-TPL classifier. Getting the 50 NameRxn labels means computing `bert_ft`
+  fingerprints and **training your own head** (a logistic head over the bundled Schneider
+  fingerprints hit **0.994** here — trivial). This resolves the open question from the handoff.
+- **SynCat ships a ready-to-run `model_schneider.pt`** (1.8 MB GNN), is **atom-mapping-free**,
+  and — importantly — the **code + weights are MIT** (the CC-BY-NC concern flagged earlier was
+  the *paper*, not the release). It needs only `torch_geometric` (no torch-scatter build) and
+  is the **lightest** of the four. Caveats: it batches internally, its 0.988 headline is
+  Schneider-only, and (like rxnfp) it cannot abstain.
 
 ### Verdict
 
-Offline viability and cost are **settled**: offline; ~20x faster; simpler deps; higher
-confirmed coverage; no atom-mapping model. What's **not** settled is label *quality* at scale
-(the mechanism disagreements above) and whether to crosswalk its private codes to
-RXNO/NameRxn. Those, plus the granularity choice, are the remaining decisions.
+Two families, and the choice is about *what a label is for*:
+
+- **Want standard, RXNO-mappable NameRxn codes at ORD scale →** SynCat is the standout (ships
+  a model, MIT, atom-mapping-free, lightest RSS, ~112 rxn/s, no head to train); rxnfp is the
+  faster alternative if you'll train the trivial head. Both are capped at **50 classes** and
+  **cannot abstain** — a real limit on ORD's long tail.
+- **Want eponymous, human-facing names or fine resolution →** Rxn-INSIGHT (eponymous, but slow
+  and atom-mapping-bound) or ReactionClassifier (6,962 structured leaves, fast, abstains — but
+  its own taxonomy). "Buchwald-Hartwig" as a discrete class needs Rxn-INSIGHT or proprietary
+  NameRxn.
+
+Still open: a label-**quality** audit at scale (the SNAr-vs-Ullmann-type disagreements), and
+whether ORD wants NameRxn/RXNO codes (→ SynCat) or eponymous/fine labels (→ Rxn-INSIGHT /
+ReactionClassifier). The granularity decision now has four concrete, measured options.
 
 ## Fallback: RXNO crosswalk of Rxn-INSIGHT names
 
@@ -387,6 +419,11 @@ but this remains low-effort and additive if you keep Rxn-INSIGHT:
   SNAr-vs-Ullmann disagreement?), and decide whether to **map its codes → RXNO/NameRxn**
   (its taxonomy is its own). If quality holds, it can replace both Rxn-INSIGHT and the
   crosswalk.
+- **rxnfp and SynCat benchmarked** (section above) — both emit real NameRxn/RXNO-mappable
+  codes; SynCat ships a ready MIT model (atom-mapping-free, lightest RSS, ~112 rxn/s), rxnfp
+  needs a trivial head (0.994) and runs ~186 rxn/s. Both cap at 50 classes and can't abstain.
+  If ORD wants standard NameRxn codes, **pilot SynCat next**; if it wants eponymous or fine
+  labels, that's Rxn-INSIGHT / ReactionClassifier.
 - **Pick the granularity target** (10 superclasses → 50 leaves → ~6,962 ReactionClassifier
   → full ~967 NameRxn); that choice selects the path. Only the last needs a NameRxn license.
 - Pilot **RXNMapper_v2** in an isolated env to see if better mappings lift Rxn-INSIGHT
@@ -411,12 +448,12 @@ commit `eb71946`, plus rxnmapper). Then
 Postgres is built via `setup_test_postgres`
 (`ord-interface/ord_interface/client/build_database.py`).
 
-**Open question before committing to option 1 (rxnfp path).** Verify whether the rxnfp
-repo ships a *ready-to-run Schneider classifier checkpoint* or only reaction fingerprints
-you must fit a head on. The ~98% figure quoted in the landscape is the *Pistachio* number;
-confirm the *Schneider-50k* accuracy and the actual load/predict API
-(`rxn4chemistry/rxnfp`, Zenodo weights) before scoping the work. DRFP is the fallback
-(fingerprint + your own MLP — definitely train-your-own).
+**Resolved (2026-07-02, see hands-on section).** rxnfp ships **only** fingerprint models
+(`bert_ft`) + a 1k-TPL classifier — **no** ready-to-run 50-class Schneider checkpoint; a
+logistic head on its bundled Schneider fingerprints gives 0.994 and runs ~186 rxn/s.
+**SynCat** ships a ready-to-run `model_schneider.pt` (MIT, atom-mapping-free, ~112 rxn/s,
+lightest RSS) — the lowest-effort open NameRxn path. Both are capped at 50 classes and
+cannot abstain.
 
 **RXNO-mapping caveat — don't assume it's free.** Public Schneider data has the `N.N.N`
 codes and names but **not** RXNO IDs. Turning a code into `RXNO:xxxxxxx` needs a crosswalk,
@@ -447,7 +484,8 @@ and that choice selects the path. Nothing below the full-967 tier needs a paid l
   <https://github.com/connorcoley/retrosim>, GLN <https://github.com/Hanjun-Dai/GLN>
 - DRFP: repo <https://github.com/reymond-group/drfp>, paper
   <https://doi.org/10.1039/D1DD00006C>
-- SynCat (2026): <https://doi.org/10.1039/D5DD00367A>
+- SynCat (2026): paper <https://doi.org/10.1039/D5DD00367A>, repo
+  <https://github.com/phuocchung123/SynCat> (MIT; ships `model_schneider.pt`, atom-mapping-free)
 - HuggingFace 10-class model:
   <https://huggingface.co/pingzhili/chemberta-v2-finetuned-uspto-50k-classification>
 - Schwaller ReactionClassifier (2026): paper <https://arxiv.org/abs/2607.01061>, repo

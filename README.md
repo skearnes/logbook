@@ -15,6 +15,21 @@ the writeup plus any assets (images, scripts, data) for that entry.
 - Begin each entry's `README.md` with an H1 title covering the date and topic.
 - Use H2 sections within an entry as needed.
 
+## Large assets
+
+Assets too large or too regenerable for git (caches, embeddings, model
+artifacts) live in the Google Cloud Storage bucket
+[`gs://skearnes-logbook`](https://console.cloud.google.com/storage/browser/skearnes-logbook)
+(project `skearnes`), mirroring the repo path. For example an entry's
+`entries/<date-topic>/assets/cache/` maps to
+`gs://skearnes-logbook/entries/<date-topic>/assets/cache/`. Keep these paths out
+of git via a local `.gitignore` and sync them with:
+
+```bash
+gsutil -m rsync -r <entry>/assets/cache \
+  gs://skearnes-logbook/<entry>/assets/cache
+```
+
 ## Linting
 
 Markdown is linted with [markdownlint-cli2][cli2] in CI on every push and pull

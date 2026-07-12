@@ -195,23 +195,92 @@ What the numbers say:
   (0.509). POTS also wins on ASAP HLM and ExpansionRx MGMB.
 - **POTS-GP < Tanimoto-GP** on nearly every endpoint (1/10 wins). FGW is an
   indefinite kernel and makes a worse GP covariance than the PSD Tanimoto
-  kernel, even though POTS is the *better nearest-neighbour metric* (see
+  kernel, even though POTS is the *better nearest-neighbor metric* (see
   interpretability).
 
 ## Reproducing
 
 ```bash
 # core deps: rdkit, scikit-learn, numpy, scipy, pandas (base env)
-python run_bench.py asap
-python run_bench.py expansionrx
-python run_bench.py pxr
-# foundation-model embeddings (torch env):
-python fm_features.py
+python run_bench.py asap        # or expansionrx / pxr / openbind / all
+python fm_features.py           # foundation-model embeddings (torch env)
+python interpret.py             # SAR continuity + molecule-pair figures
+python ablate.py                # geometry + alpha ablations
+python conformer_ablation.py    # POTS with single-conformer geometry
+# blind-challenge leaderboard placement:
+python score_leaderboard.py     # ExpansionRx RAE on the official final test
+python place_leaderboard.py     # ranks vs the 103-finalist final leaderboards
+python score_pxr.py             # PXR RAE vs the public anchor
 ```
 
 Assets: [`pots.py`](assets/pots.py) (method), [`bench.py`](assets/bench.py)
 (representations), [`run_bench.py`](assets/run_bench.py) (driver),
-[`fm_features.py`](assets/fm_features.py) (ChemBERTa).
+[`fm_features.py`](assets/fm_features.py) (ChemBERTa/MoLFormer),
+[`score_leaderboard.py`](assets/score_leaderboard.py) /
+[`place_leaderboard.py`](assets/place_leaderboard.py) /
+[`score_pxr.py`](assets/score_pxr.py) (challenge placement, reproducing the
+challenges' own `evaluate.py`/`utils.py` scoring, kept under
+[`assets/data/leaderboard/`](assets/data/leaderboard/)).
+
+The regenerable pharmacophore-cloud and foundation-model embedding caches
+(~385 MB) are not in git; they live in
+`gs://skearnes-logbook/entries/2026-07-11-implicit-geometry-similarity/assets/cache/`
+(see the repo README's *Large assets* section). The scripts recreate them on
+demand if absent.
+
+## Blind-challenge leaderboard placement
+
+The two OpenADMET datasets above are public blind challenges with real final
+leaderboards, so we can ask directly: **where would POTS have placed?** These
+challenges are *not* scored by Spearman but by **RAE** (relative absolute error,
+`MAE / mean|y − mean(y)|`) — for ExpansionRx, per endpoint on log10(y+1)-
+transformed values (LogD left raw), bootstrapped 1000×, then macro-averaged over
+the 9 endpoints (**MA-RAE**). We reproduced the challenge's exact scoring code
+(`evaluate.py` / `utils.py` from the leaderboard Space), trained each model on
+the official challenge train split, and scored on the official **final** (full
+blinded) test set — the same 2282 compounds and the same metric behind the
+**FINAL** leaderboard (not the live validation leaderboard).
+([`score_leaderboard.py`](assets/score_leaderboard.py),
+[`place_leaderboard.py`](assets/place_leaderboard.py)).
+
+**The essential caveat, up front:** a *plain untuned ECFP4 + RandomForest also
+lands near the bottom* of the finalists. The leaderboard measures "single
+untuned model vs 103 heavily-engineered pipelines" (ensembles, multitask
+learning, external data like Tox21/ChEMBL/NCATS) — not "POTS vs the field." So
+POTS's placement should be read *relative to the ECFP4/RDKit2D baselines*, where
+it is marginally worse, exactly as the Spearman benchmark showed.
+
+**ExpansionRx — aggregate MA-RAE (103 finalists; winner 0.511, median 0.669,
+worst 2.741):**
+
+| model | MA-RAE | rank |
+|---|---|---|
+| RDKit2D | 0.818 | ~90/103 |
+| ECFP4 | 0.821 | ~90/103 |
+| ECFP+POTS | 0.824 | ~90/103 |
+| **POTS** | **0.877** | **~93/103** |
+| MoLFormer | 0.915 | ~96/103 |
+
+All five cluster in the bottom ~15%. The classical baselines and POTS are within
+0.06 MA-RAE of each other; the real gap is to the engineered top of the board.
+
+**ExpansionRx — per-endpoint final-leaderboard rank (of 103), best model per
+row shown:** the strongest placements come from the ECFP+POTS hybrid — MLM CLint
+~60, MGMB ~71, MPPB ~82 — while POTS alone peaks at MLM CLint/MGMB ~81–84. No
+endpoint reaches the top half. (Full grid in
+[`pots_placement_full.csv`](assets/data/leaderboard/pots_placement_full.csv).)
+
+**PXR induction (activity track, RAE on pEC50):** the real final leaderboard is
+served from a private bucket and is not downloadable; the one public anchor is
+that RAE ≈ 0.586 placed ~40th of 211 (top ~19%). Scored on the full unblinded
+test (513 compounds, phase 1 + 2), our models give RAE: ECFP+POTS **0.794**,
+RDKit2D 0.813, ECFP4 0.832, POTS 0.852, MoLFormer 0.949 — all above (worse than)
+the 0.586 anchor, so all would land **below ~rank 40/211**. Consistent with the
+Spearman benchmark, PXR is the one place POTS *helps*: adding POTS to ECFP
+improves RAE from 0.832 to 0.794 (the best of any model here), so ECFP+POTS
+would out-place plain ECFP4 on this target even though neither is competitive
+with the engineered top of the board.
+([`score_pxr.py`](assets/score_pxr.py).)
 
 ## Interpretability — where POTS is genuinely different
 
@@ -249,7 +318,7 @@ SAR should score high) is mixed and low for both: on SARS-CoV-2 pIC50 POTS 0.23
 vs Tanimoto 0.33 (Tanimoto better); on OpenBind pKD POTS 0.11 vs Tanimoto 0.02
 (POTS better). Neither is a strong SAR-continuity metric. (Note: an earlier
 distance-weighted **kNN** comparison did favor POTS strongly over Tanimoto on
-HLM — 0.53 vs 0.26 — so POTS is a better *local neighbour* metric than a global
+HLM — 0.53 vs 0.26 — so POTS is a better *local neighbor* metric than a global
 GP kernel or SAR-slope metric; the picture is genuinely model-dependent.)
 
 ## Ablations

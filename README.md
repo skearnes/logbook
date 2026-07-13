@@ -26,9 +26,16 @@ artifacts) live in the Google Cloud Storage bucket
 of git via a local `.gitignore` and sync them with:
 
 ```bash
-gsutil -m rsync -r <entry>/assets/cache \
+gsutil rsync -r <entry>/assets/cache \
   gs://skearnes-logbook/<entry>/assets/cache
 ```
+
+Note (macOS): do **not** use `gsutil -m` here — multiprocessing forks workers
+that segfault when a child does a DNS lookup via Apple's non-fork-safe
+Network.framework ("Python quit unexpectedly"). Set `parallel_process_count = 1`
+(and e.g. `parallel_thread_count = 24`) under `[GSUtil]` in `~/.boto` so syncs
+use threads, not forked processes. Also install the compiled crcmod C extension
+(`python3 -m pip install --no-binary :all: crcmod`) so checksumming is fast.
 
 ## Linting
 

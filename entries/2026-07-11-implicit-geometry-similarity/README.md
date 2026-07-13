@@ -299,9 +299,12 @@ Tanimoto (distance 0.87, i.e. Tanimoto similarity ≈ 0.13) yet POTS ranks it am
 the *most similar* pairs in the set (distance rank 0.02) — and the two compounds
 have similar potency (ΔpIC50 = 0.8). POTS sees the shared pharmacophore (an
 aromatic, a hydrophobic aryl, and a flanking di-carbonyl H-bond-acceptor motif —
-thiazolidinedione vs hydantoin) that the graph fingerprint misses.
+thiazolidinedione vs hydantoin) that the graph fingerprint misses. In the figure
+both molecules are aligned on their maximum common substructure, which is
+highlighted; note how *little* 2D structure the MCS actually covers — the
+similarity POTS detects is pharmacophoric, not substructural.
 
-![Scaffold-hop pair POTS calls similar but Tanimoto calls distant](assets/pair_scaffold_hop_sars.png)
+![Scaffold-hop pair POTS calls similar but Tanimoto calls distant, aligned and highlighted on their small shared MCS](assets/pair_scaffold_hop_sars.png)
 
 For contrast, a textbook **activity cliff**: two near-identical spiro-
 isoquinolinones (Tanimoto-similar) whose potency differs by >4 log units
@@ -352,10 +355,27 @@ ground metric (α=0.5):
 The distance-geometry **bounds** matrix — the intended clever part — does *not*
 reliably beat plain bond-count **topology** (it is worse on HLM), while a single
 real **ETKDG conformer** is best on 2/3. So the cheap implicit geometry buys
-little over topology, and real (if still cheap) 3D helps more. This is the most
-actionable negative result: the "implicit 3D via bounds" thesis is not borne out,
-and switching the default ground metric to a single ETKDG conformer (~9 ms/mol)
-is a straightforward improvement.
+little over topology, and real (if still cheap) 3D helps more.
+
+**Following this up (the promised next step): swapping the POTS ground metric to
+a single ETKDG conformer helps the augmented/hybrid variants.** Re-running only
+the POTS representations with `geometry="conformer"` across the 6 ASAP endpoints
+where it was affordable ([`conformer_ablation.py`](assets/conformer_ablation.py),
+mean ΔSpearman vs the bounds default):
+
+| variant | mean Δ (conformer − bounds) | notable |
+|---|---|---|
+| `pots` (landmark only) | −0.04 | wash |
+| `pots+glob` | **+0.10** | LogD −0.01→0.53 |
+| `ecfp_pots` | **+0.07** | LogD 0.31→0.70 |
+| `pots+gp` | +0.02 | HLM 0.47→0.66 |
+
+So real 3D geometry clearly helps the variants that also carry global/ECFP
+context (biggest single gain: LogD `ecfp_pots` 0.31→0.70), while pure
+landmark-`pots` is unmoved. The conformer-free bounds matrix was the wrong
+economy; a single cheap conformer is the better default. (The full-benchmark
+conformer rerun was truncated to the ASAP subset because ETKDG embedding is ~6×
+slower than the bounds matrix and uncached.)
 
 ## Foundation-model notes
 
@@ -448,9 +468,12 @@ topology.
 
 ## Next steps
 
-- **Swap the ground metric to a single ETKDG conformer** (~9 ms/mol): the
-  ablation shows real 3D beats the bounds matrix on 2/3 endpoints, and the
-  bounds geometry does not beat topology. This is the most promising fix.
+- **Swap the ground metric to a single ETKDG conformer** (~9 ms/mol) —
+  *confirmed to help*: the follow-up conformer ablation improves `pots+glob` by
+  +0.10 and `ecfp_pots` by +0.07 mean Spearman across the ASAP endpoints (LogD
+  `ecfp_pots` 0.31→0.70). Make it the default and re-run the full benchmark +
+  leaderboard placement on conformer geometry (cache conformers to amortize the
+  ~6× embedding cost).
 - **Stop abstracting away detail for the feature path.** Use POTS purely as an
   interpretable similarity / scaffold-hopping tool and keep ECFP for regression,
   rather than expecting the pharmacophore embedding to win on accuracy.

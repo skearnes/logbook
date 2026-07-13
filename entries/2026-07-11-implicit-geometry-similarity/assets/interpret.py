@@ -20,7 +20,7 @@ import os
 import numpy as np
 import pandas as pd
 from rdkit import Chem, DataStructs
-from rdkit.Chem import AllChem, Draw
+from rdkit.Chem import AllChem, Draw, rdFMCS, rdDepictor
 from scipy.stats import spearmanr
 
 from pots import PharmacophoreCloud, fgw_distance
@@ -74,14 +74,28 @@ def sar_continuity(csv, target_col, n=150, seed=0):
 
 
 def _draw_pair(smi_a, smi_b, legend_a, legend_b, title, path):
+    """Render a molecule pair aligned on (and highlighting) their MCS."""
     ma, mb = Chem.MolFromSmiles(smi_a), Chem.MolFromSmiles(smi_b)
-    for m in (ma, mb):
-        AllChem.Compute2DCoords(m)
+    AllChem.Compute2DCoords(ma)
+    AllChem.Compute2DCoords(mb)
+    hi_a, hi_b = [], []
+    mcs = rdFMCS.FindMCS([ma, mb], completeRingsOnly=True, timeout=10,
+                         bondCompare=rdFMCS.BondCompare.CompareOrderExact)
+    if mcs.numAtoms >= 4:
+        patt = Chem.MolFromSmarts(mcs.smartsString)
+        try:
+            # Use the first molecule as the template and rotate/flip the second
+            # onto it so the shared MCS is drawn in the same orientation.
+            rdDepictor.GenerateDepictionMatching2DStructure(mb, ma, refPatt=patt)
+        except Exception:
+            pass
+        hi_a = list(ma.GetSubstructMatch(patt))
+        hi_b = list(mb.GetSubstructMatch(patt))
     img = Draw.MolsToGridImage(
         [ma, mb], legends=[legend_a, legend_b], molsPerRow=2,
-        subImgSize=(360, 300))
+        subImgSize=(360, 300), highlightAtomLists=[hi_a, hi_b])
     img.save(path)
-    print(f"  wrote {os.path.relpath(path, HERE)}  ({title})")
+    print(f"  wrote {os.path.relpath(path, HERE)}  (MCS {mcs.numAtoms} atoms; {title})")
 
 
 def find_and_draw(csv, target_col, tag, n=250, seed=0):

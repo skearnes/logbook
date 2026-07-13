@@ -6,6 +6,9 @@ the writeup plus any assets (images, scripts, data) for that entry.
 
 ## Conventions
 
+- **All changes go through a pull request into `main` — never commit or push
+  directly to `main`.** Work on a branch, open a PR, and merge it (CI runs the
+  markdown lint on every PR).
 - Start a new entry by creating `entries/YYYY-MM-DD-topic/` and copying
   [`TEMPLATE.md`](TEMPLATE.md) into it as `README.md`.
 - Name each directory `entries/YYYY-MM-DD-topic/` (e.g.

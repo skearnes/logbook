@@ -38,6 +38,7 @@ cannot break any public API or Python/Java binding. Each verified at exactly one
 repo-wide occurrence (the definition).
 
 ### `Code/GraphMol/Descriptors/GETAWAY.cpp` (~77 lines)
+
 - `retreiveMat` (:70)
 - `retreiveVect` (:75)
 - `round_to_n_digits` (:92)
@@ -47,12 +48,14 @@ repo-wide occurrence (the definition).
 - `AppendDouble` (:326)
 
 ### `Code/GraphMol/MolDraw2D/DrawMolMCHLasso.cpp` (~53 lines, dead since 2023 / PR #6936)
+
 - `arcEnd` (:177)
 - `adjustLineEnd` (:629)
 - `calcAnglesFromXAxis` (:652)
 - `getArcEnds` (:716)
 
 ### Singletons
+
 - `SortBasedOnFirstElement` — `Code/GraphMol/SmilesParse/SmilesWrite.cpp:485`
 - `canRemoveNeg` — `Code/GraphMol/MolStandardize/Charge.cpp:332`
 - `getBoolDefaultValue` — `Code/GraphMol/MolInterchange/Parser.cpp:139`

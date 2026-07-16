@@ -5,6 +5,7 @@ results for plan item #1 (see COMPILE_TIME_PLAN.md). Measured on macOS / Apple
 clang 21, C++20, shared-library build (RDKIT_DYN_LINK), 8 cores.
 
 ## OUTCOME (2026-06-09)
+
 **Item #1 deferred to maintainers; pivoted to item #2 (unity builds).** The
 prototype disproved the runtime objection (nil cost) and quantified the prize,
 but the feasibility test revealed the real blocker: ROMol's public iteration
@@ -15,6 +16,7 @@ builds, which capture much of the same compile win without touching ROMol's API
 or the iteration hot path. This doc is the artifact to hand maintainers for #1.
 
 ## TL;DR
+
 The feared blocker (runtime cost of de-inlining ROMol's hot accessors) **did not
 materialize** — a controlled A/B shows **no measurable regression (<1%, mixed
 sign)**. The compile prize is real: **~0.51s of frontend parse per TU × 335 TUs**.
@@ -23,6 +25,7 @@ This makes the decoupling worth doing — but it remains an ABI break that touch
 should be coordinated with the PCH PR (#9236).
 
 ## The prize (compile time)
+
 - `boost/graph/adjacency_list.hpp` = **143,286 preprocessed lines** ≈ **64% of
   ROMol.h's parse cost** (ROMol.cpp expands to 224k lines total).
 - Measured wall-clock to parse it once (`clang -fsyntax-only`, best of 3):
@@ -35,6 +38,7 @@ should be coordinated with the PCH PR (#9236).
   rebuilds, and downstream library consumers** — exactly PCH's gaps.
 
 ## The feared cost (runtime) — measured, and it's nil
+
 Concern: removing the BGL include forces a pimpl pointer + de-inlining ROMol's
 inline graph accessors (`getNumAtoms()`, `operator[]`, `atoms()`/`bonds()`), some
 of which run in tight loops.
@@ -61,6 +65,7 @@ run-to-run variance was itself ~1-2% once builds stopped; early "noise" of
 444→713us was concurrent-build interference, not signal.)
 
 ## What the full implementation still requires (not yet done)
+
 The prototype only de-inlined to measure runtime; it did NOT remove the include.
 To actually drop `<boost/graph/adjacency_list.hpp>` from ROMol.h:
 
@@ -86,7 +91,9 @@ To actually drop `<boost/graph/adjacency_list.hpp>` from ROMol.h:
    releases anyway.)
 
 ## BLOCKER found during implementation (supersedes the optimism above)
+
 A forward-declared `MolGraph` is **not sufficient**. Verified by compile test:
+
 - `std::unique_ptr<MolGraph>` member — OK with fwd-decl.
 - `const MolGraph& getTopology() const;` — OK with fwd-decl.
 - **`CXXAtomIterator<MolGraph, Atom*> atoms();` — FAILS.** Naming this return type
@@ -115,9 +122,11 @@ Net: the "pimpl + de-inline + migrate 42 files" scope is **insufficient**; the
 real project is "make ROMol iteration index-based," which is larger and riskier.
 
 ## Recommendation
+
 **Proceed — but socialize first.** The runtime objection is empirically dead and
 the compile prize is real, so this is no longer a "probably not worth it" change.
 But it's an ABI break touching the core type and ~42 files, so:
+
 1. Open a maintainer issue with this data (prize, the nil runtime result, the
    42-file typedef migration, ABI note), and coordinate with #9236 so the two
    compile-time efforts don't overlap/conflict.
@@ -126,5 +135,6 @@ But it's an ABI break touching the core type and ~42 files, so:
    mechanical commit.
 
 ## Reproduce
+
 - Prize: `printf '#include <boost/graph/adjacency_list.hpp>\nint main(){}' > x.cpp; time clang++ -I<boost> -std=c++20 -fsyntax-only x.cpp`
 - Runtime: de-inline getNumAtoms()/operator[] into ROMol.cpp, `ninja Code/Bench/bench`, `./bench "[molops],[descriptors]" --benchmark-samples 40` (build both variants, run back-to-back on a quiet machine).

@@ -47,7 +47,8 @@ Don't duplicate #9236; stack on top of it.
 ## Ranked changes
 
 ### 1. Decouple `boost/graph` from `ROMol.h` — top structural change
-**Value: high · Effort: high · Risk: medium (public API)**
+
+**Value:** high · **Effort:** high · **Risk:** medium (public API)
 
 `ROMol.h` includes the full BGL `adjacency_list` header, so all 335 `RDKitBase`
 consumers re-parse BGL — the biggest slice of the frontend cost. PCH masks this
@@ -63,7 +64,8 @@ downstream library users still pay it every time.
 - **Prereq:** maintainer discussion before touching the central header.
 
 ### 2. Unity / jumbo builds (`CMAKE_UNITY_BUILD`), per-directory
-**Value: high · Effort: medium · Risk: medium (ODR)**
+
+**Value:** high · **Effort:** medium · **Risk:** medium (ODR)
 
 Parses shared headers once per batch instead of per file (typ. 2–3× on heavy
 dirs). Crucially **helps GCC/Linux**, where #9236 regresses — the GCC-friendly
@@ -75,7 +77,8 @@ analog of PCH.
   heavy leaf dir (e.g. `Descriptors`, `MolDraw2D`).
 
 ### 3. Trim heavy headers the PCH doesn't cover — easy starter
-**Value: medium · Effort: low · Risk: low**
+
+**Value:** medium · **Effort:** low · **Risk:** low
 
 Mechanical, uncontroversial, helps all builds incl. non-PCH:
 
@@ -87,7 +90,8 @@ Validate each by diffing preprocessed line count (`clang -E | wc -l`) of a
 representative consumer before/after.
 
 ### 4. `extern template` for hot templated APIs
-**Value: medium · Effort: medium · Risk: low**
+
+**Value:** medium · **Effort:** medium · **Risk:** low
 
 Currently **zero** `extern template` in the tree; `InstantiateFunction` +
 `InstantiateClass` was ~0.63s/TU. Declare `extern template` in headers + one
@@ -95,13 +99,15 @@ explicit instantiation in a `.cpp` for the most-included templated code
 (fingerprint generators, substruct matchers) so every TU stops re-instantiating.
 
 ### 5. Split the `RDKitBase.h` god-header
-**Value: medium · Effort: high · Risk: low-medium**
+
+**Value:** medium · **Effort:** high · **Risk:** low-medium
 
 Fans out to 335 TUs, dragging in Atom/Bond/RWMol/PeriodicTable/etc. Finer-grained
 includes shrink incremental rebuilds. Large mechanical effort, lowest value ÷
 effort of the list — do last, if at all.
 
 ### Non-code (config) — worth raising separately
+
 - **ccache** (`CMAKE_CXX_COMPILER_LAUNCHER`) in CI/dev — not a code change, but
   eliminates recompiles; should be on.
 
@@ -117,6 +123,7 @@ effort of the list — do last, if at all.
 4. **#4 / #5** — opportunistic.
 
 ## How to measure any change
+
 - Per-TU parse cost: `clang -E <flags> file.cpp | wc -l` before/after.
 - Real hotspots: `clang -ftime-trace` → inspect `Total Frontend` / `ParseClass` /
   `InstantiateFunction`.

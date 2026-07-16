@@ -13,5 +13,7 @@
     // Cosmetic; don't require padding spaces around table pipes.
     "MD060": false
   },
-  "ignores": ["node_modules"]
+  // Entry assets are archived verbatim (docs written elsewhere); lint only the
+  // entry READMEs and other first-party prose.
+  "ignores": ["node_modules", "entries/*/assets/**/*.md"]
 }

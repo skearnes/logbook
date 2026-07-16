@@ -129,6 +129,7 @@ Rung 3 is a trap.
 ## Pros / cons: less-Boost vs no-Boost
 
 **Why reduce Boost at all (the real benefits):**
+
 - *Build & packaging:* fewer compiled Boost libs to find/build/link/version-pin. Boost
   version skew is a recurring downstream pain; every compiled component removed is one
   fewer ABI-coupled dep. (Header-only removals don't help here — hence the L/C lens.)
@@ -142,6 +143,7 @@ Rung 3 is a trap.
   Boost.Python — the single biggest size lever.
 
 **Why NOT chase zero-Boost (the costs):**
+
 - *No std equivalent for the load-bearing pieces:* `dynamic_bitset` and `flyweight` have no
   standard replacement; `std::vector<bool>`/`std::bitset` are not substitutes. Replacing
   them means *owning* a perf-critical data structure forever.
@@ -223,6 +225,7 @@ This deserves its own RFC, not a paragraph here, but the shape:
   (compile-time positive), reviewed by hand — never a bulk apply.
 
 ## What I'm explicitly NOT recommending
+
 - Removing `dynamic_bitset` or `flyweight` (no std equivalent; header-only; high risk, ~zero
   packaging payoff). Keep them.
 - A single "de-Boost RDKit" mega-effort. Split by the three problems and by L/C.

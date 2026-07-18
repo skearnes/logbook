@@ -1,0 +1,6 @@
+# Large regenerable assets live in gs://skearnes-logbook, not git.
+assets/data/
+assets/cache/
+assets/results/*.pt
+
+__pycache__/

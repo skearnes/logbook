@@ -1,0 +1,21 @@
+asap_HLM_hlm                               ecfp4 0.511  student 0.158  both 0.174
+asap_KSOL_ksol                             ecfp4 0.126  student 0.184  both 0.208
+asap_LogD_logd                             ecfp4 0.306  student 0.324  both 0.329
+asap_MDR1-MDCKII_mdr1_mdckii               ecfp4 0.818  student 0.761  both 0.824
+asap_MLM_mlm                               ecfp4 0.570  student 0.043  both 0.076
+asap_pIC50_MERS-CoV_pic50_mers_cov         ecfp4 0.765  student 0.733  both 0.744
+asap_pIC50_SARS-CoV-2_pic50_sars_cov_2     ecfp4 0.831  student 0.808  both 0.815
+exprx_caco2_papp_caco2_papp                ecfp4 0.356  student 0.285  both 0.360
+exprx_caco_2_permeability_efflux_caco_2_permeability_efflux ecfp4 0.446  student 0.527  both 0.529
+exprx_hlm_clint_hlm_clint                  ecfp4 0.532  student 0.417  both 0.461
+exprx_ksol_ksol                            ecfp4 0.377  student 0.394  both 0.414
+exprx_logd_logd                            ecfp4 0.599  student 0.518  both 0.547
+exprx_mbpb_mbpb                            ecfp4 0.651  student 0.473  both 0.512
+exprx_mgmb_mgmb                            ecfp4 0.689  student 0.625  both 0.622
+exprx_mlm_clint_mlm_clint                  ecfp4 0.452  student 0.321  both 0.394
+exprx_mppb_mppb                            ecfp4 0.521  student 0.409  both 0.416
+
+mean Spearman:
+ecfp4            0.534
+student          0.436
+ecfp4+student    0.464

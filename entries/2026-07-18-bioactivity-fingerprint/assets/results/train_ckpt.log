@@ -1,0 +1,17 @@
+training compounds: 615,130
+/Users/skearnes/logbook/entries/2026-07-18-bioactivity-fingerprint/assets/student.py:122: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /Users/runner/miniforge3/conda-bld/libtorch_1781830596731/work/torch/csrc/autograd/generated/python_variable_methods.cpp:839.)
+  total += float(loss) * len(index)
+  epoch  1/12  masked MSE 0.2458
+  epoch  2/12  masked MSE 0.1855
+  epoch  3/12  masked MSE 0.1608
+  epoch  4/12  masked MSE 0.1449
+  epoch  5/12  masked MSE 0.1321
+  epoch  6/12  masked MSE 0.1218
+  epoch  7/12  masked MSE 0.1130
+  epoch  8/12  masked MSE 0.1057
+  epoch  9/12  masked MSE 0.0992
+  epoch 10/12  masked MSE 0.0934
+  epoch 11/12  masked MSE 0.0891
+  epoch 12/12  masked MSE 0.0843
+wrote results/student_multitask.pt

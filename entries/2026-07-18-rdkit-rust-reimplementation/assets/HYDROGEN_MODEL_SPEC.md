@@ -427,34 +427,67 @@ is to make indices opaque handles and expose input order as an explicit
 property, which is better design but a real migration hazard: it breaks
 downstream code silently rather than loudly. See §6.
 
-### 3.5.1 Coordinates are where the model actually strains
+### 3.5.1 Conformers cover every atom; the cost lands on loading
 
-Chemistry is not where always-explicit costs the most; geometry is. If every
-hydrogen is a node, every conformer needs a coordinate for every hydrogen. A
-molfile carrying 3D heavy-atom coordinates and no hydrogens then forces an
-unpleasant choice: fabricate hydrogen positions on load, or admit a
-"no coordinate" sentinel — and a sentinel makes conformers partial,
-reintroducing exactly the partial state §3.1 removed. Two-dimensional depiction
-has the same problem from the other direction, since it deliberately does not
-place most hydrogens.
+A conformer covers every atom in the molecule, hydrogens included. There is no
+partial or heavy-only conformer.
 
-Heavy-first partitioning resolves this. With heavy atoms occupying
-`[0, n_heavy)`, a conformer is a **prefix array** over the heavy atoms, with an
-optional hydrogen extension covering `[n_heavy, n_atoms)`:
+This matches RDKit, whose `Conformer` is always sized to `numAtoms` — verified
+on 2026.03.4, where a nine-atom explicit-H ethanol yields nine positions, and
+`Compute2DCoords` assigns real coordinates to the hydrogens. The invariant is
+also forced by the physics: 3D embedding requires hydrogens, so any conformer
+this library *generates* has them by construction.
 
-```text
-conformer.heavy   -> coordinates for [0, n_heavy)        always present
-conformer.all     -> coordinates for [0, n_atoms)        present iff extended
-```
+The cost therefore does not fall on embedding. It falls on **loading**. PDB
+files, crystal structures, and vendor SDFs routinely carry 3D heavy-atom
+coordinates with no hydrogens — X-ray data below roughly 1.2 Å does not resolve
+them. Under always-explicit the molecule acquires hydrogen nodes on load, so the
+conformer must supply coordinates for them, and the loader has to place them.
 
-No sentinel, no fabricated geometry, and no partial state — a conformer either
-has the hydrogen extension or it does not, which is a property of the conformer
-rather than of individual atoms.
+Placement is not free. Idealized geometry from standard bond lengths and angles
+determines most hydrogen positions well, but rotatable hydrogens — hydroxyl,
+thiol, amine — depend on the hydrogen-bonding network, which is why dedicated
+tools such as `reduce` exist. The loader is therefore guessing, on data a
+consumer may care about.
 
-This is the second thing partitioning buys, after contiguous heavy iteration
-(§3.5). Two independent problems resolved by one storage decision is reason to
-treat heavy-first ordering as load-bearing in the design rather than as a
-performance optimization to be applied later.
+The resolution is the same one §3.3 applies to hydrogen counts: **coordinates
+carry provenance.** Each conformer records whether its hydrogen positions were
+measured or idealized. Fabrication is acceptable when it is recorded; silently
+absent coordinates are worse than explicitly idealized ones. That this
+distinction recurs unchanged at the geometry level is mild evidence that
+asserted-versus-inferred is a real seam in the domain rather than an artifact of
+hydrogen handling.
+
+Provenance here is read by more than the serializer — analysis code legitimately
+cares whether hydrogen positions are experimental. That does not violate the
+§3.4.4 test, which concerns annotations that reconstruct the dual
+*representation*; coordinate provenance is ordinary metadata and reconstructs
+nothing.
+
+### 3.5.2 Depictions are not conformers
+
+RDKit stores 2D layouts as a `Conformer` with `is3D` false. A depiction is a
+rendering artifact, not a conformation, and conflating them is why "must a
+conformer have hydrogen coordinates?" looks ambiguous — the answer differs for
+the two things sharing one type.
+
+Separating them resolves it: `Conformer` is 3D molecular geometry and covers
+every atom; `Depiction` is a 2D layout for rendering and is heavy-atom by
+construction, since hydrogens are mostly not drawn. Each then has a clean
+invariant instead of a shared weak one.
+
+### 3.5.3 Stripping hydrogens after embedding is no longer expressible
+
+A common workflow embeds with hydrogens, then removes them to shrink a conformer
+library. Always-explicit makes that inexpressible: the hydrogen nodes cannot be
+dropped, so the coordinates stay.
+
+The replacement is compression at the storage layer rather than mutation of the
+graph — hydrogen positions are highly predictable from heavy-atom geometry and
+compress well, which is the same information the strip-and-regenerate workflow
+was exploiting implicitly. This is nonetheless a real workflow break for anyone
+managing large conformer libraries, and belongs in the migration notes rather
+than being waved through.
 
 ### 3.6 What the type system still carries
 
@@ -535,10 +568,13 @@ lives on it permanently.
   libraries. Does a compressed on-disk form that inflates on load suffice, or
   does the in-memory representation itself need a count-based variant for
   screening workloads? Note that reintroducing one would bring back most of §2.2.
-- **Conformer hydrogen extensions (§3.5.1).** Is "has hydrogen coordinates" a
-  property of the conformer, or does a molecule with several conformers need
-  them to agree? Disagreement is representable and probably should be rejected,
-  but that is an invariant to state rather than discover.
+- **Hydrogen placement on load (§3.5.1).** Which idealized-geometry routine, and
+  how are rotatable hydrogens handled — a fixed rule, or an optional
+  network-aware pass in the spirit of `reduce`? The cheap default is defensible
+  only if the provenance annotation is honest about it.
+- **Conformer library size (§3.5.3).** Does storage-layer compression actually
+  recover what strip-after-embed used to save? Worth measuring before telling
+  anyone their workflow is obsolete.
 - **Query hydrogen constraints.** SMARTS allows ranges and negation, so the
   constraint type is richer than an optional integer.
 - **Valence model coupling.** Inferred counts depend on the valence model, which

@@ -272,17 +272,44 @@ legacy pattern files get legacy semantics.
 
 ### Where leaning in actually strains: coordinates
 
-Geometry, not chemistry, is the real cost. Every H node needs a coordinate in
-every conformer, so a molfile with 3D heavy atoms and no hydrogens forces either
-fabricated positions or a "no coordinate" sentinel — and a sentinel makes
-conformers partial, reintroducing the partial state the design removed.
+Geometry, not chemistry, is the real cost — though the first analysis of it was
+wrong and got corrected.
 
-Heavy-first partitioning resolves it: a conformer becomes a **prefix array** over
-`[0, n_heavy)` with an optional hydrogen extension. No sentinel, no fabricated
-geometry, and "has hydrogen coordinates" is a property of the conformer rather
-than of individual atoms. That is the second problem partitioning solves after
-contiguous heavy iteration, which is reason to treat heavy-first ordering as
-load-bearing rather than as a later optimization.
+The initial claim was that conformers should become prefix arrays over heavy
+atoms with an optional hydrogen extension, so a hydrogen-less 3D file needs no
+fabricated geometry. That invents partial state to solve a mostly nonexistent
+problem. **A conformer covers every atom, hydrogens included** — which is what
+RDKit already does (`Conformer` is sized to `numAtoms`; verified on 2026.03.4,
+where nine-atom explicit-H ethanol gives nine positions and `Compute2DCoords`
+assigns real coordinates to the hydrogens), and what the physics forces, since
+3D embedding requires hydrogens.
+
+So the cost does not fall on embedding. It falls on **loading**. PDB files,
+crystal structures, and vendor SDFs routinely carry 3D heavy-atom coordinates
+and no hydrogens — X-ray below ~1.2 Å does not resolve them. Under
+always-explicit the molecule gains H nodes on load, the conformer must cover
+them, and the loader has to invent positions. Idealized geometry handles most
+hydrogens well, but rotatable ones (hydroxyl, thiol, amine) depend on the
+H-bonding network, which is why `reduce` exists.
+
+Resolution is the same move as §3.3: **coordinates carry provenance**, measured
+versus idealized. Fabrication is acceptable when recorded; silently absent
+coordinates are worse than explicitly idealized ones. The asserted/inferred
+distinction recurring unchanged at the geometry level is mild evidence it is a
+real seam in the domain rather than an artifact of hydrogen handling.
+
+Two follow-ons. **Depictions are not conformers** — RDKit stores 2D layouts as
+`Conformer` with `is3D=False`, but a depiction is a rendering artifact, and
+conflating them is why "must a conformer have hydrogen coordinates" looked
+ambiguous: the answer differs for the two things sharing a type. Split them and
+each gets a clean invariant. And **stripping hydrogens after embedding is no
+longer expressible**, which is a genuine workflow break for anyone shrinking
+conformer libraries that way; the replacement is storage-layer compression, and
+that claim needs measuring before anyone is told their workflow is obsolete.
+
+This also retracts the earlier "partitioning solves two problems" claim.
+Heavy-first storage still buys contiguous heavy iteration; it is not needed for
+conformers.
 
 What survives of the objection is narrower and sits in transforms rather than
 queries: transforms *write*, so when a rule changes a heavy atom's hydrogen

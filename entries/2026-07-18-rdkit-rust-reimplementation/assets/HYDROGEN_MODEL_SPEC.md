@@ -207,15 +207,59 @@ already defines this set — and it already contains both views:
 | `h` | `getTotalNumHs(false)` (`QueryOps.h:118`) | counts only |
 | `H` | `getTotalNumHs(true)` (`QueryOps.h:115`) | graph neighbors + counts |
 
-The finding is that these primitives are defined against *storage state* rather
-than chemistry. `getDegree()` returns actual graph neighbors, so `[CD1]` matches
-a methyl carbon while hydrogens are implicit and stops matching it after
-`AddHs`, when the degree becomes 4. The same pattern gives different answers for
-the same molecule depending on an unrelated preprocessing call. `H` and `X` are
+These primitives are defined against *storage state* rather than chemistry.
+`getDegree()` returns actual graph neighbors, so `[CD1]` matches a methyl carbon
+while hydrogens are implicit and stops matching it after `AddHs`, when the
+degree becomes 4. The same pattern gives different answers for the same molecule
+depending on an unrelated preprocessing call. `H` and `X` are
 representation-independent; `D` and `h` are not.
 
-Under always-explicit with views, all of them become stable, because there is
-only one representation to be independent of:
+**This is not an RDKit choice.** The Daylight SMARTS specification defines these
+primitives in exactly these terms:
+
+- `H<n>` — "total-H-count", "*n* attached hydrogens"
+- `h<n>` — "implicit-H-count", "*n* implicit hydrogens"
+- `D<n>` — "degree", "*n* explicit connections"
+- `X<n>` — "connectivity", "*n* total connections"
+
+RDKit implements the spec faithfully. The dual representation is baked into the
+*query language standard*: `h` and `D` only have meaning in a model where a
+hydrogen may be either a graph node or a count. The `[CD1]` instability above is
+spec-conformant behavior, not a defect in RDKit.
+
+Note also the terminology inversion: in Daylight's vocabulary a bracket hydrogen
+such as `[CH3]` is *implicit* — it is not a graph node. RDKit stores that count
+in a field named `numExplicitHs`, which means the opposite of the specification's
+word for it. This is an independent argument for §3.3's reading that the field
+is really tracking *assertion*, not materialization.
+
+### 3.4.2 Divergence from the Daylight specification
+
+Because the dual representation is in the standard, always-explicit cannot adopt
+Daylight SMARTS unchanged. Two primitives must be redefined, and this is a
+deliberate incompatibility rather than a cleanup:
+
+- **`D` is rebound to heavy degree.** Read literally, "explicit connections"
+  under always-explicit would count hydrogen nodes, making `D` equivalent to `X`
+  and breaking essentially every `D` pattern ever written. Binding it to
+  `heavy_degree` instead preserves the *intent* of existing patterns — an author
+  writing `[CD1]` means methyl-like — and makes the primitive stable across
+  preprocessing. It is nonetheless a semantic change to a standardized language.
+- **`h` is deleted**, or aliased to `H`. Under one representation there are no
+  implicit hydrogens for it to count.
+
+The trade is defensible: the spec-conformant behavior is itself the footgun, and
+the redefinition makes patterns mean what their authors meant. But it must be
+documented as intentional divergence from a published standard, with a migration
+note, rather than presented as a free improvement.
+
+This also reclassifies the hydrogen model in the project's own triage. It is not
+purely a Tier 1 internal wart with identical observable behavior; it is partly a
+Tier 2 decision, because SMARTS matching semantics change in a way callers can
+observe.
+
+The remaining properties are stable under always-explicit and need no
+redefinition:
 
 - `total_h(atom)` — count of hydrogen neighbors. Backs SMARTS `H`.
 - `heavy_degree(atom)` — count of non-hydrogen neighbors. Backs SMARTS `D`,
@@ -230,7 +274,7 @@ SMARTS `h` — "implicit hydrogen count" — has no referent in this model and
 should be deleted. It is the one primitive that exists purely as an artifact of
 the dual representation.
 
-### 3.4.2 Transforms need a hydrogen reconciliation policy
+### 3.4.3 Transforms need a hydrogen reconciliation policy
 
 Queries only read, so §3.4 fully covers them. Transforms write, and that is
 where always-explicit imposes a real obligation.
@@ -326,10 +370,11 @@ lives on it permanently.
 - The `_isotopicHs` side channel disappears.
 - Every property has exactly one home, because the node always exists.
 - Queries and transforms are still authored implicit-H, so the SMIRKS catalogs
-  port unchanged (modulo the reconciliation policy of §3.4.2).
+  port unchanged (modulo the reconciliation policy of §3.4.3).
 - SMARTS `D` becomes representation-independent: `[CD1]` matches a methyl carbon
-  unconditionally, rather than silently ceasing to match after `AddHs`.
-- SMARTS `h` is deleted, having no referent once there is one representation.
+  unconditionally, rather than silently ceasing to match after `AddHs`. Note
+  this is a deliberate divergence from the Daylight specification, not a bug
+  fix — see §3.4.2.
 - Stereo perception simplifies: a tetrahedral center always has four real
   neighbors and a wedge bond always has a real endpoint, so the phantom-neighbor
   special-casing threaded through `Chirality.cpp` (4k lines) should shrink.
@@ -348,7 +393,11 @@ lives on it permanently.
 - **How much does `Query` duplicate?** If `Query` and `Mol` share little, the
   fork is cheap; if matching, traversal, and serialization all need two
   implementations, it is expensive. Worth prototyping before committing.
-- **The hydrogen reconciliation policy (§3.4.2).** Which hydrogen node moves
+- **How much existing SMARTS does the `D` redefinition break?** The rebinding in
+  §3.4.2 preserves intent for patterns meaning "methyl-like", but any pattern
+  authored against an explicit-H molecule means the opposite. Needs a survey of
+  real-world pattern corpora, not just RDKit's shipped catalogs.
+- **The hydrogen reconciliation policy (§3.4.3).** Which hydrogen node moves
   when an implicit-H-authored transform changes a heavy atom's hydrogen count?
   Irrelevant for equivalent hydrogens, decisive when one is isotope-labeled.
   Needs to be stated, and the stated policy needs checking against RDKit's
@@ -423,8 +472,21 @@ implicit-H and match against the target's heavy view (§3.4). What survives of
 the objection is narrower and lives in transforms rather than queries — the
 reconciliation policy of §3.4.2.
 
-Investigating that led to the §3.4.1 finding, which is the best evidence so far
-that the design is right: RDKit's SMARTS language *already* carries both views
-as separate primitives (`D`/`X`, `h`/`H`), but binds two of them to storage
-state rather than to chemistry. The language wanted this model; the data model
-did not supply it.
+Investigating that led to the §3.4.1 finding: SMARTS *already* carries both
+views as separate primitives (`D`/`X`, `h`/`H`), but binds two of them to
+storage state rather than to chemistry.
+
+That was initially recorded as evidence the design is right — the language
+wanting a model the data model failed to supply. Checking the Daylight
+specification corrected it. `h` ("implicit-H-count") and `D` ("*n* explicit
+connections") are Daylight primitives, defined in those terms by the standard;
+RDKit implements them faithfully. The dual representation is therefore in the
+*query language standard*, not merely in RDKit's data model.
+
+This makes the finding sharper but less comfortable. Always-explicit is not
+cleaning up an implementation artifact — it requires deliberately diverging from
+a published specification on two primitives (§3.4.2), which moves the hydrogen
+model out of Tier 1 (invisible internal change) and partly into Tier 2
+(observable semantic change with a compatibility cost). The trade still looks
+right, because the spec-conformant behavior is the footgun, but it must be
+argued rather than assumed.

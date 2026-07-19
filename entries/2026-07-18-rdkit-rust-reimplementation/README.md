@@ -185,22 +185,43 @@ This requires the heavy-atom property set to be complete — `total_h`,
 `heavy_degree`, `total_degree`, valences, ring properties — which is what makes
 the representation invisible to rule authors.
 
-**The best evidence yet that this design is right:** RDKit's SMARTS language
-already carries both views as distinct primitives (`QueryOps.h:83-120`) —
+**The dual representation is in the SMARTS standard, not just in RDKit.**
+SMARTS already carries both views as distinct primitives (`QueryOps.h:83-120`) —
 
-| SMARTS | Implementation | View |
-| --- | --- | --- |
-| `D` | `getDegree()` | graph neighbors |
-| `X` | `getTotalDegree()` | graph + counts |
-| `h` | `getTotalNumHs(false)` | counts only |
-| `H` | `getTotalNumHs(true)` | graph + counts |
+| SMARTS | Daylight definition | RDKit implementation | View |
+| --- | --- | --- | --- |
+| `D` | "*n* explicit connections" | `getDegree()` | graph neighbors |
+| `X` | "*n* total connections" | `getTotalDegree()` | graph + counts |
+| `h` | "*n* implicit hydrogens" | `getTotalNumHs(false)` | counts only |
+| `H` | "*n* attached hydrogens" | `getTotalNumHs(true)` | graph + counts |
 
-— but binds two of them to *storage state* rather than chemistry. `getDegree()`
-counts real graph neighbors, so `[CD1]` matches a methyl carbon while hydrogens
-are implicit and silently stops matching after `AddHs`. `H` and `X` are
-representation-independent; `D` and `h` are not. The query language wanted this
-model all along; the data model failed to supply it. Under always-explicit,
-`D` becomes permanently stable and `h` is deleted for having no referent.
+`getDegree()` counts real graph neighbors, so `[CD1]` matches a methyl carbon
+while hydrogens are implicit and silently stops matching after `AddHs`. `H` and
+`X` are representation-independent; `D` and `h` are not.
+
+The first read was that this is an RDKit artifact — the query language wanting a
+model the data model failed to supply. **Checking the Daylight spec corrected
+that.** `h` ("implicit-H-count") and `D` ("explicit connections") are Daylight
+primitives defined in exactly those terms, and RDKit implements them faithfully.
+The `[CD1]` instability is spec-conformant, not a defect.
+
+So always-explicit is not a cleanup here. It requires deliberately diverging
+from a published standard on two primitives: `D` must be rebound to heavy degree
+(read literally it would become equivalent to `X`, breaking every `D` pattern
+ever written), and `h` must be deleted or aliased to `H` for lack of a referent.
+Rebinding `D` preserves what authors *mean* by `[CD1]` and makes it stable, so
+the trade looks right — but it is a semantic change to a standardized language
+and has to be argued, with a migration note, rather than sold as a free win.
+
+**This reclassifies the hydrogen model from Tier 1 to partly Tier 2** in the
+triage above: not an invisible internal change, but an observable semantic one
+with a real compatibility cost.
+
+A smaller find in the same vein: in Daylight's vocabulary a bracket hydrogen
+like `[CH3]` is *implicit* — not a graph node. RDKit stores that count in a
+field called `numExplicitHs`, which means the opposite of the standard's word
+for it. Probably a real source of confusion, and independent support for reading
+that field as tracking *assertion* rather than materialization.
 
 What survives of the objection is narrower and sits in transforms rather than
 queries: transforms *write*, so when a rule changes a heavy atom's hydrogen
@@ -235,8 +256,8 @@ most of it spent reading RDKit to learn *why* each wart exists.
   matching, traversal, and serialization each need two implementations, the fork
   is expensive and the always-explicit design gets materially less attractive.
 - Confirm the `[CD1]`-before-and-after-`AddHs` instability empirically, then
-  count how many patterns in RDKit's shipped catalogs use `D` or `h`, to size
-  how much real behavior the change touches.
+  survey how many patterns in real-world corpora (not just RDKit's shipped
+  catalogs) use `D` or `h`, to size the cost of diverging from Daylight on both.
 - State a hydrogen reconciliation policy, replay the tautomer catalog under it,
   and diff against RDKit to see how often the isotope ambiguity is reached.
 - Benchmark always-explicit with heavy-first partitioning against RDKit on

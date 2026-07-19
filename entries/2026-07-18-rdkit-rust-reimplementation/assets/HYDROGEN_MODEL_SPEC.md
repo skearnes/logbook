@@ -208,11 +208,20 @@ already defines this set — and it already contains both views:
 | `H` | `getTotalNumHs(true)` (`QueryOps.h:115`) | graph neighbors + counts |
 
 These primitives are defined against *storage state* rather than chemistry.
-`getDegree()` returns actual graph neighbors, so `[CD1]` matches a methyl carbon
-while hydrogens are implicit and stops matching it after `AddHs`, when the
-degree becomes 4. The same pattern gives different answers for the same molecule
-depending on an unrelated preprocessing call. `H` and `X` are
-representation-independent; `D` and `h` are not.
+Measured on RDKit 2026.03.4 against `CC(=O)O`, before and after `AddHs`:
+
+| Pattern | Implicit H | After `AddHs` | |
+| --- | --- | --- | --- |
+| `[CD1]` | `((0,),)` | `()` | changed |
+| `[Ch3]` | `((0,),)` | `()` | changed |
+| `[CX4]` | `((0,),)` | `((0,),)` | stable |
+| `[CH3]` | `((0,),)` | `((0,),)` | stable |
+| `[CH0]` | `((1,),)` | `((1,),)` | stable |
+| `[Cv4]` | `((0,), (1,))` | `((0,), (1,))` | stable |
+
+The same pattern gives different answers for the same molecule depending on an
+unrelated preprocessing call. `H`, `X`, and `v` are representation-independent;
+`D` and `h` are not.
 
 **This is not an RDKit choice.** The Daylight SMARTS specification defines these
 primitives in exactly these terms:
@@ -248,10 +257,28 @@ deliberate incompatibility rather than a cleanup:
 - **`h` is deleted**, or aliased to `H`. Under one representation there are no
   implicit hydrogens for it to count.
 
+Usage across RDKit's own shipped catalogs (1717 non-comment pattern lines in
+`Data/` and the MolStandardize catalogs) sizes the two decisions very
+differently:
+
+| Primitive | Occurrences | Notes |
+| --- | --- | --- |
+| `D` | 170 | 37 of 38 lines in `FunctionalGroups.txt`; 84 of 116 in `patty_rules.txt` |
+| `h` | 0 | unused throughout |
+
+Deleting `h` is therefore close to free, at least by this sample. `D` is heavily
+used — but every one of these catalogs is authored against implicit-hydrogen
+molecules, which is how RDKit is used in practice, so rebinding `D` to heavy
+degree *preserves all 170*. The rebinding is not a risk to existing patterns; it
+is what keeps them working. Only patterns authored against explicit-hydrogen
+molecules would invert, and there appear to be none in RDKit's own corpus.
+
 The trade is defensible: the spec-conformant behavior is itself the footgun, and
 the redefinition makes patterns mean what their authors meant. But it must be
 documented as intentional divergence from a published standard, with a migration
-note, rather than presented as a free improvement.
+note, rather than presented as a free improvement. Note also that RDKit's
+shipped catalogs are one curated corpus, not a representative sample of
+real-world SMARTS; the survey in §7 still stands.
 
 This also reclassifies the hydrogen model in the project's own triage. It is not
 purely a Tier 1 internal wart with identical observable behavior; it is partly a
@@ -302,6 +329,79 @@ default-isotope hydrogen; move an isotope-labeled one only when it is the sole
 candidate). An explicit policy is an improvement over emergent behavior, but it
 is unavoidable work rather than a free win.
 
+### 3.4.4 Rejected: a per-node `is_implicit` flag
+
+An obvious middle path is to keep every hydrogen in the graph — so properties
+have a home — but tag each hydrogen node `is_implicit` or `is_explicit`. Its
+attraction is that it restores referents for Daylight `h` and `D` and removes
+the divergence of §3.4.2.
+
+It should be rejected. The governing test:
+
+> A per-node annotation is acceptable if and only if nothing but the serializer
+> reads it. Once matching reads it, the dual representation is back.
+
+The flag fails that test by construction. For `h` and `D` to work, the flag must
+be live during matching, so every molecule carries an implicit/explicit
+assignment that changes match results — and `[CD1]` again answers differently
+depending on how the flags happen to be set. The flag does not fix the `D`
+instability; it re-implements it, buying specification compliance by preserving
+the defect.
+
+The rest of §2.2 returns with it. `RemoveHs` becomes "flip explicit to
+implicit," which revives the question *may this hydrogen be flipped?* — an
+isotope-labeled hydrogen marked implicit cannot be written as `[CH3]`, so the
+writer must override the flag. Advisory state silently overridden by a
+downstream layer is the same footgun family as `getTotalNumHs`'s default
+argument. And algorithms face three views (all hydrogens, explicit-flagged,
+implicit-flagged) rather than two.
+
+### 3.4.5 What the flag was right about: write-time derivation
+
+The underlying intuition is nonetheless correct: something per-hydrogen *is*
+needed for faithful round-tripping, and the per-heavy-atom provenance of §3.3
+does not supply it. Writing `[2H]C` requires folding three hydrogens into a
+count while materializing the fourth — a per-node decision that provenance
+cannot express.
+
+That decision is **derived at write time, not stored**. A hydrogen is written as
+a node if and only if it carries information that count notation cannot hold:
+
+- a non-default isotope;
+- a non-zero formal charge;
+- an atom map number;
+- degree other than one;
+- a stereo or wedge role on its bond;
+- membership in a substance group.
+
+This is revision 1's collapsibility predicate, relocated from the data model to
+the serializer. The relocation is what makes it correct. As a graph operation it
+was lossy and induced molecule states; as a writer policy it destroys nothing,
+tracks no partial state, and expresses precisely what belongs in a serializer —
+what the target format can represent.
+
+One case resists derivation: "this molfile drew its hydrogens explicitly and
+byte-fidelity is wanted." That is a genuine stored annotation, but it is
+per-file in practice and, critically, is still read only by the writer. It
+passes the test.
+
+### 3.4.6 Daylight compatibility as a matching dialect
+
+Rather than diverging from the specification unconditionally (§3.4.2), make it
+selectable. The in-memory model stays pure; a matcher running in Daylight
+dialect derives an implicit/explicit assignment at match time using the §3.4.5
+predicate and evaluates `h` and `D` against it.
+
+```rust
+match(query, target, SmartsDialect::Daylight)  // h, D per the specification
+match(query, target, SmartsDialect::Modern)    // h absent, D is heavy degree
+```
+
+Specification-exact semantics are then available on request, the data model
+stays uncontaminated, and legacy pattern files — the case that actually wants
+legacy semantics — get them. The divergence becomes a default rather than an
+absolute.
+
 ### 3.5 Representation
 
 The obvious objection to always-explicit is cost. The NCI 5K sample has a median
@@ -326,6 +426,35 @@ not stable across edits. RDKit consumers depend on both. The intended resolution
 is to make indices opaque handles and expose input order as an explicit
 property, which is better design but a real migration hazard: it breaks
 downstream code silently rather than loudly. See §6.
+
+### 3.5.1 Coordinates are where the model actually strains
+
+Chemistry is not where always-explicit costs the most; geometry is. If every
+hydrogen is a node, every conformer needs a coordinate for every hydrogen. A
+molfile carrying 3D heavy-atom coordinates and no hydrogens then forces an
+unpleasant choice: fabricate hydrogen positions on load, or admit a
+"no coordinate" sentinel — and a sentinel makes conformers partial,
+reintroducing exactly the partial state §3.1 removed. Two-dimensional depiction
+has the same problem from the other direction, since it deliberately does not
+place most hydrogens.
+
+Heavy-first partitioning resolves this. With heavy atoms occupying
+`[0, n_heavy)`, a conformer is a **prefix array** over the heavy atoms, with an
+optional hydrogen extension covering `[n_heavy, n_atoms)`:
+
+```text
+conformer.heavy   -> coordinates for [0, n_heavy)        always present
+conformer.all     -> coordinates for [0, n_atoms)        present iff extended
+```
+
+No sentinel, no fabricated geometry, and no partial state — a conformer either
+has the hydrogen extension or it does not, which is a property of the conformer
+rather than of individual atoms.
+
+This is the second thing partitioning buys, after contiguous heavy iteration
+(§3.5). Two independent problems resolved by one storage decision is reason to
+treat heavy-first ordering as load-bearing in the design rather than as a
+performance optimization to be applied later.
 
 ### 3.6 What the type system still carries
 
@@ -406,6 +535,10 @@ lives on it permanently.
   libraries. Does a compressed on-disk form that inflates on load suffice, or
   does the in-memory representation itself need a count-based variant for
   screening workloads? Note that reintroducing one would bring back most of §2.2.
+- **Conformer hydrogen extensions (§3.5.1).** Is "has hydrogen coordinates" a
+  property of the conformer, or does a molecule with several conformers need
+  them to agree? Disagreement is representable and probably should be rejected,
+  but that is an invariant to state rather than discover.
 - **Query hydrogen constraints.** SMARTS allows ranges and negation, so the
   constraint type is richer than an optional integer.
 - **Valence model coupling.** Inferred counts depend on the valence model, which
@@ -430,11 +563,10 @@ The spec is only worth anything if it can be checked against reality:
 6. Measure the memory and traversal cost of always-explicit with heavy-first
    partitioning against RDKit on a fingerprinting benchmark, to test the §3.5
    claim that traversal cost is recoverable.
-7. Confirm the `D` instability of §3.4.1 empirically: match `[CD1]` against a
-   molecule before and after `AddHs` and check the results differ. Then count
-   how many patterns across RDKit's shipped catalogs (tautomer transforms,
-   normalizations, fragment and filter catalogs) use `D` or `h`, to size how
-   much real-world behavior the change touches.
+7. **Done** (§3.4.1, §3.4.2). `D` and `h` confirmed unstable across `AddHs` on
+   RDKit 2026.03.4; `H`, `X`, and `v` stable. Shipped catalogs use `D` 170 times
+   and `h` zero times. Remaining: survey real-world pattern corpora outside
+   RDKit, which are the population the `D` rebinding actually risks.
 8. Replay the tautomer catalog under a stated reconciliation policy (§3.4.2) and
    diff against RDKit's output, to find how often the isotope ambiguity is
    actually reached.

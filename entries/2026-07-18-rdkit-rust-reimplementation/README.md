@@ -223,6 +223,67 @@ field called `numExplicitHs`, which means the opposite of the standard's word
 for it. Probably a real source of confusion, and independent support for reading
 that field as tracking *assertion* rather than materialization.
 
+**Measured** on RDKit 2026.03.4 against `CC(=O)O`, before and after `AddHs`:
+`[CD1]` and `[Ch3]` both change their answer; `[CX4]`, `[CH3]`, `[CH0]`, and
+`[Cv4]` do not. Across 1717 non-comment pattern lines in RDKit's shipped
+catalogs, `D` appears 170 times (37 of 38 lines in `FunctionalGroups.txt`, 84 of
+116 in `patty_rules.txt`) and `h` appears zero times.
+
+So the two decisions are sized very differently. Deleting `h` is close to free.
+`D` is pervasive — but those catalogs are all authored against implicit-H
+molecules, so rebinding `D` to heavy degree *preserves all 170*. The rebinding
+is what keeps them working, not a threat to them. Only patterns authored against
+explicit-H molecules invert, and RDKit's corpus contains none. Caveat: one
+curated corpus is not a representative sample of real-world SMARTS.
+
+### Rejected: a per-node is_implicit flag
+
+The natural middle path — keep every H in the graph so properties have a home,
+but tag each node implicit or explicit — restores referents for Daylight `h` and
+`D` and would remove the divergence entirely. It should still be rejected. The
+governing test:
+
+> A per-node annotation is acceptable if and only if nothing but the serializer
+> reads it. Once matching reads it, the dual representation is back.
+
+The flag fails by construction: for `h` and `D` to work it must be live during
+matching, so `[CD1]` again answers differently depending on how flags happen to
+be set. **It does not fix the `D` instability, it re-implements it** — buying
+spec compliance by preserving the defect. It also revives the §2.2 problem, since
+`RemoveHs` becomes "flip explicit to implicit" and an isotope-labeled H marked
+implicit cannot be written as `[CH3]`, forcing the writer to override the flag.
+And algorithms face three views instead of two.
+
+What the flag is *right* about: something per-hydrogen genuinely is needed for
+round-tripping, and per-heavy-atom provenance can't supply it — writing `[2H]C`
+means folding three hydrogens and materializing one. But that is **derived at
+write time, not stored**: materialize an H iff it carries information count
+notation can't hold (isotope, charge, atom map, degree ≠ 1, stereo/wedge role,
+SGroup membership). That is revision 1's collapsibility predicate, relocated
+from the data model to the serializer — which is what makes it correct. As a
+graph operation it was lossy and induced molecule states; as a writer policy it
+destroys nothing and tracks no partial state.
+
+Rather than diverging from Daylight unconditionally, the divergence can also be
+made a **matching dialect**: keep the model pure, and let a Daylight-dialect
+matcher derive an implicit/explicit assignment at match time via the same
+predicate. Spec-exact semantics on request, no flag in the data model, and
+legacy pattern files get legacy semantics.
+
+### Where leaning in actually strains: coordinates
+
+Geometry, not chemistry, is the real cost. Every H node needs a coordinate in
+every conformer, so a molfile with 3D heavy atoms and no hydrogens forces either
+fabricated positions or a "no coordinate" sentinel — and a sentinel makes
+conformers partial, reintroducing the partial state the design removed.
+
+Heavy-first partitioning resolves it: a conformer becomes a **prefix array** over
+`[0, n_heavy)` with an optional hydrogen extension. No sentinel, no fabricated
+geometry, and "has hydrogen coordinates" is a property of the conformer rather
+than of individual atoms. That is the second problem partitioning solves after
+contiguous heavy iteration, which is reason to treat heavy-first ordering as
+load-bearing rather than as a later optimization.
+
 What survives of the objection is narrower and sits in transforms rather than
 queries: transforms *write*, so when a rule changes a heavy atom's hydrogen
 count, some H node must actually move, and the engine needs a stated policy for
@@ -255,9 +316,9 @@ most of it spent reading RDKit to learn *why* each wart exists.
 - Prototype the `Mol`/`Query` split to find out how much it duplicates. If
   matching, traversal, and serialization each need two implementations, the fork
   is expensive and the always-explicit design gets materially less attractive.
-- Confirm the `[CD1]`-before-and-after-`AddHs` instability empirically, then
-  survey how many patterns in real-world corpora (not just RDKit's shipped
-  catalogs) use `D` or `h`, to size the cost of diverging from Daylight on both.
+- ~~Confirm the `[CD1]` instability empirically and count `D`/`h` usage in
+  shipped catalogs.~~ Done — see above. Remaining: survey real-world pattern
+  corpora outside RDKit, which are the population the `D` rebinding risks.
 - State a hydrogen reconciliation policy, replay the tautomer catalog under it,
   and diff against RDKit to see how often the isotope ambiguity is reached.
 - Benchmark always-explicit with heavy-first partitioning against RDKit on

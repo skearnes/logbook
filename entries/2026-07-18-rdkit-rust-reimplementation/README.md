@@ -286,26 +286,58 @@ assigns real coordinates to the hydrogens), and what the physics forces, since
 
 So the cost does not fall on embedding. It falls on **loading**. PDB files,
 crystal structures, and vendor SDFs routinely carry 3D heavy-atom coordinates
-and no hydrogens — X-ray below ~1.2 Å does not resolve them. Under
-always-explicit the molecule gains H nodes on load, the conformer must cover
-them, and the loader has to invent positions. Idealized geometry handles most
-hydrogens well, but rotatable ones (hydroxyl, thiol, amine) depend on the
-H-bonding network, which is why `reduce` exists.
+and no hydrogens — X-ray below ~1.2 Å does not resolve them.
 
-Resolution is the same move as §3.3: **coordinates carry provenance**, measured
-versus idealized. Fabrication is acceptable when recorded; silently absent
-coordinates are worse than explicitly idealized ones. The asserted/inferred
-distinction recurring unchanged at the geometry level is mild evidence it is a
-real seam in the domain rather than an artifact of hydrogen handling.
+The next draft said the loader should therefore place idealized hydrogens and
+record "these were idealized" as provenance. **That was also wrong**, and the
+correction is the better idea: coordinates are simply optional per atom.
 
-Two follow-ons. **Depictions are not conformers** — RDKit stores 2D layouts as
-`Conformer` with `is3D=False`, but a depiction is a rendering artifact, and
-conflating them is why "must a conformer have hydrogen coordinates" looked
-ambiguous: the answer differs for the two things sharing a type. Split them and
-each gets a clean invariant. And **stripping hydrogens after embedding is no
-longer expressible**, which is a genuine workflow break for anyone shrinking
-conformer libraries that way; the replacement is storage-layer compression, and
-that claim needs measuring before anyone is told their workflow is obsolete.
+### Coordinates are optional per atom
+
+```rust
+conformer.position(atom) -> Option<Point3>
+```
+
+Absence *is* the provenance. Nothing is fabricated at load, and the type forces
+every reader to handle the missing case. The place-and-flag design fabricates
+geometry and then depends on consumers checking a flag to learn it isn't real —
+the same failure shape as `getTotalNumHs`'s default argument, where the obvious
+reading silently returns something wrong.
+
+The stated objection to optional positions had been that they make conformers
+"partial," reintroducing the partial state the design removed. That was a
+category error: the ban on partial state is about partial *representation*
+(a half-materialized molecule is ambiguous about what it means), whereas a
+missing coordinate is **missing data** — an ordinary thing to state and a
+dishonest thing to paper over.
+
+**The decisive argument is that this isn't a hydrogen question.** Experimental
+structures lack positions for heavy atoms too — disordered regions, unresolved
+side chains. RDKit cannot express that: `Conformer` offers only
+`GetAtomPosition` with no notion of absence, so a missing position must be
+encoded as a missing *atom*. Verified on 2026.03.4, a PDB lysine with an
+unresolved side chain loads as **four atoms** — chemically a lysine, structurally
+a fragment. Chemical identity and observational completeness are conflated, and
+the molecule is silently wrong rather than explicitly incomplete. `Option<Point3>`
+handles hydrogens and heavy atoms uniformly and fixes it.
+
+Consequences: hydrogen placement becomes an explicit opt-in operation rather than
+a hidden step in parsing; provenance demotes to annotating deliberate placement;
+and completeness gives the typestate machinery a real second use, since force
+fields, RMSD, and shape comparison need full geometry
+(`conformer.complete() -> Option<CompleteConformer>`).
+
+It also **retracts the strip-after-embed breakage**. The workflow becomes "drop
+hydrogen positions, keep hydrogen nodes," which is expressible and recovers most
+of the win, since a multi-conformer library stores the graph once and coordinates
+N times. The residual cost is one molecule's worth of hydrogen nodes per library
+— far smaller than claimed.
+
+One other follow-on stands: **depictions are not conformers.** RDKit stores 2D
+layouts as `Conformer` with `is3D=False`, but a depiction is a rendering
+artifact, and conflating them is why "must a conformer have hydrogen
+coordinates" looked ambiguous — the answer differs for the two things sharing a
+type.
 
 This also retracts the earlier "partitioning solves two problems" claim.
 Heavy-first storage still buys contiguous heavy iteration; it is not needed for

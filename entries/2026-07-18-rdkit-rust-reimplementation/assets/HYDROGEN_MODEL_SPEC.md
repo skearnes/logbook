@@ -427,42 +427,79 @@ is to make indices opaque handles and expose input order as an explicit
 property, which is better design but a real migration hazard: it breaks
 downstream code silently rather than loudly. See §6.
 
-### 3.5.1 Conformers cover every atom; the cost lands on loading
+### 3.5.1 Coordinates are optional per atom
 
-A conformer covers every atom in the molecule, hydrogens included. There is no
-partial or heavy-only conformer.
+A conformer maps atoms to *optional* positions:
 
-This matches RDKit, whose `Conformer` is always sized to `numAtoms` — verified
-on 2026.03.4, where a nine-atom explicit-H ethanol yields nine positions, and
-`Compute2DCoords` assigns real coordinates to the hydrogens. The invariant is
-also forced by the physics: 3D embedding requires hydrogens, so any conformer
-this library *generates* has them by construction.
+```rust
+conformer.position(atom) -> Option<Point3>
+```
 
-The cost therefore does not fall on embedding. It falls on **loading**. PDB
-files, crystal structures, and vendor SDFs routinely carry 3D heavy-atom
-coordinates with no hydrogens — X-ray data below roughly 1.2 Å does not resolve
-them. Under always-explicit the molecule acquires hydrogen nodes on load, so the
-conformer must supply coordinates for them, and the loader has to place them.
+Absence is the model's way of saying the position is unknown. Nothing is
+fabricated at load time, and every reader is forced by the type to handle the
+missing case.
 
-Placement is not free. Idealized geometry from standard bond lengths and angles
-determines most hydrogen positions well, but rotatable hydrogens — hydroxyl,
-thiol, amine — depend on the hydrogen-bonding network, which is why dedicated
-tools such as `reduce` exist. The loader is therefore guessing, on data a
-consumer may care about.
+This corrects an earlier draft that required conformers to cover every atom and
+had the loader place idealized hydrogens, recording "these were idealized" as
+provenance. That design fabricates geometry and then depends on each consumer
+checking a flag to discover it is not real — the same failure shape as
+`getTotalNumHs`'s default argument, where the obvious reading silently returns
+something wrong. Optional positions invert it: the obvious reading cannot
+silently succeed.
 
-The resolution is the same one §3.3 applies to hydrogen counts: **coordinates
-carry provenance.** Each conformer records whether its hydrogen positions were
-measured or idealized. Fabrication is acceptable when it is recorded; silently
-absent coordinates are worse than explicitly idealized ones. That this
-distinction recurs unchanged at the geometry level is mild evidence that
-asserted-versus-inferred is a real seam in the domain rather than an artifact of
-hydrogen handling.
+The earlier draft rejected optional positions on the grounds that they make
+conformers "partial," reintroducing the partial state §3.1 removes. That was a
+category error. §3.1 bans partial *representation* — a molecule half-materialized
+is ambiguous about what it means, and the same molecule can denote two different
+things. A missing coordinate is not ambiguity, it is **missing data**, which is
+an ordinary thing for a data model to state and a dishonest thing to paper over.
 
-Provenance here is read by more than the serializer — analysis code legitimately
-cares whether hydrogen positions are experimental. That does not violate the
-§3.4.4 test, which concerns annotations that reconstruct the dual
-*representation*; coordinate provenance is ordinary metadata and reconstructs
-nothing.
+#### Why this is not a hydrogen question
+
+The decisive argument is that partial coordinates are not specific to hydrogens.
+Experimental structures routinely lack positions for heavy atoms — disordered
+regions, unresolved side chains, low-occupancy alternates.
+
+RDKit has no way to express this. `Conformer` exposes only `GetAtomPosition`,
+with no notion of absence, so a missing position must be encoded as a missing
+*atom*. Verified on 2026.03.4: a PDB lysine whose side chain is unresolved loads
+as four atoms — a residue that is chemically a lysine becomes a fragment.
+Chemical identity and observational completeness are conflated, and the molecule
+is silently wrong rather than explicitly incomplete.
+
+`Option<Point3>` handles hydrogens and heavy atoms uniformly and fixes this. The
+hydrogen case is then just the most common instance of a general problem, which
+is a much better position than a hydrogen-specific rule.
+
+#### What survives
+
+- **Hydrogen placement is an explicit operation**, not something loading does
+  silently: `mol.place_hydrogens(HPlacement::Idealized)`. Callers who want
+  idealized geometry ask for it.
+- **Provenance demotes but survives.** Once positions can be deliberately placed,
+  a consumer may still want to know whether present coordinates were measured or
+  generated. This is now secondary annotation — absence carries the primary
+  signal — and nothing happens without the caller's involvement.
+- **Placement quality remains a real problem.** Idealized bond lengths and angles
+  determine most hydrogen positions well, but rotatable hydrogens (hydroxyl,
+  thiol, amine) depend on the hydrogen-bonding network, which is why tools such
+  as `reduce` exist. The difference is that this is now an opt-in routine whose
+  quality the caller can reason about, rather than a hidden step in file parsing.
+- **Completeness becomes a typestate with a real use.** Force fields, RMSD, and
+  shape comparison require full geometry:
+
+  ```rust
+  conformer.complete() -> Option<CompleteConformer>
+  fn mmff_optimize(c: &CompleteConformer) -> Energy;
+  ```
+
+  This gives §3.6's machinery a second concrete application, which is mild
+  evidence the typestate approach earns its complexity rather than being applied
+  for its own sake.
+
+Storage note: `Option<Point3>` over `f64` has no niche and would cost eight bytes
+of padding per atom. A dense coordinate array plus a presence bitset is the
+obvious representation; the API stays `Option`.
 
 ### 3.5.2 Depictions are not conformers
 
@@ -476,18 +513,22 @@ every atom; `Depiction` is a 2D layout for rendering and is heavy-atom by
 construction, since hydrogens are mostly not drawn. Each then has a clean
 invariant instead of a shared weak one.
 
-### 3.5.3 Stripping hydrogens after embedding is no longer expressible
+### 3.5.3 Stripping hydrogens after embedding, revisited
 
 A common workflow embeds with hydrogens, then removes them to shrink a conformer
-library. Always-explicit makes that inexpressible: the hydrogen nodes cannot be
-dropped, so the coordinates stay.
+library. An earlier draft recorded this as a hard workflow break, since the
+hydrogen nodes cannot be dropped.
 
-The replacement is compression at the storage layer rather than mutation of the
-graph — hydrogen positions are highly predictable from heavy-atom geometry and
-compress well, which is the same information the strip-and-regenerate workflow
-was exploiting implicitly. This is nonetheless a real workflow break for anyone
-managing large conformer libraries, and belongs in the migration notes rather
-than being waved through.
+Optional coordinates (§3.5.1) largely restore it. The workflow becomes "drop the
+hydrogen *positions*, keep the hydrogen nodes," which is expressible and recovers
+most of the benefit: a multi-conformer library stores the graph once and the
+coordinates N times, so coordinates dominate, and discarding roughly half of them
+is close to what stripping the atoms achieved.
+
+What remains is the fixed graph overhead — one molecule's worth of hydrogen nodes
+per library rather than per conformer. That is a much smaller cost than the
+earlier draft claimed. Worth measuring rather than asserting, but it is no longer
+a workflow that becomes impossible.
 
 ### 3.6 What the type system still carries
 
@@ -568,13 +609,19 @@ lives on it permanently.
   libraries. Does a compressed on-disk form that inflates on load suffice, or
   does the in-memory representation itself need a count-based variant for
   screening workloads? Note that reintroducing one would bring back most of §2.2.
-- **Hydrogen placement on load (§3.5.1).** Which idealized-geometry routine, and
-  how are rotatable hydrogens handled — a fixed rule, or an optional
-  network-aware pass in the spirit of `reduce`? The cheap default is defensible
-  only if the provenance annotation is honest about it.
-- **Conformer library size (§3.5.3).** Does storage-layer compression actually
-  recover what strip-after-embed used to save? Worth measuring before telling
-  anyone their workflow is obsolete.
+- **Hydrogen placement quality (§3.5.1).** Now opt-in rather than implicit, but
+  which routine? A fixed idealized-geometry rule is cheap and wrong for
+  rotatable hydrogens; a network-aware pass in the spirit of `reduce` is much
+  better and much more expensive. Possibly both, selected by the caller.
+- **How far does optionality propagate?** If positions are optional, so are
+  derived geometric quantities — bond lengths, angles, torsions, centroids. Does
+  every geometry accessor return `Option`, or does `CompleteConformer` become
+  the ordinary currency with partial conformers confined to loading and
+  serialization? The second is likely right, but it needs deciding once rather
+  than case by case.
+- **Conformer library size (§3.5.3).** Does dropping hydrogen positions recover
+  what stripping hydrogen atoms used to save? Should be close, since coordinates
+  dominate multi-conformer storage, but measure it.
 - **Query hydrogen constraints.** SMARTS allows ranges and negation, so the
   constraint type is richer than an optional integer.
 - **Valence model coupling.** Inferred counts depend on the valence model, which

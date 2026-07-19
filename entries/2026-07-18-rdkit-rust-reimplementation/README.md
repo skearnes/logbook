@@ -123,25 +123,62 @@ results:
 - `getTotalNumHs()` sums only the first two and defaults `includeNeighbors` to
   `false`, while `AddHs` zeroes the explicit count (`AddHs.cpp:608`). So after
   `AddHs`, a methyl carbon reports zero hydrogens by default.
-- The original hunch was "three models should be one." That is nearly right, but
-  `numExplicitHs` is load-bearing: it encodes **provenance** (a count *asserted*
-  by the input versus one *inferred* from valence rules), which matters for
-  lossless round-tripping and for the query case where "unspecified" differs
-  from zero. Confirmed in the parsers — `smiles.yy:379`, `MolFileParser.cpp:824`
-  and `:3090`, `smarts.yy:50-56` all set the count and the flag together.
-- So the clean model is one invariant (total H count) plus two orthogonal bits:
-  provenance (asserted/inferred/unspecified) and materialization (node vs
-  count).
-- Best find: the fifteen boolean knobs in `RemoveHsParameters`
-  (`MolOps.h:302-331`) are not fifteen policies. They are an ad-hoc enumeration
-  of one predicate — *does this hydrogen carry information beyond its own
-  existence?* Stating that predicate once derives all fifteen, and makes the
-  `_isotopicHs` side-channel property unnecessary.
+- The fifteen boolean knobs in `RemoveHsParameters` (`MolOps.h:302-331`) are not
+  fifteen policies. They are an ad-hoc enumeration of one predicate — *does this
+  hydrogen carry information beyond its own existence?* Each flag marks a case
+  where the count representation lost information and a flag was bolted on to
+  prevent it, which is the strongest available evidence that counts are the
+  wrong default.
 
-The general lesson, which is the main reason to keep going: a meaningful
-fraction of what looks like cruft turns out to be load-bearing for a case that
-would otherwise break. Finding out which is which *is* the work, and it is not
-parallelizable across people.
+### Revision 2: always-explicit hydrogens
+
+The spec went through two revisions in one sitting, and the second is the
+interesting one.
+
+Revision 1 modeled materialization as a *state of the molecule* (materialized /
+dematerialized / mixed) with a partial `dematerialize` operation, and derived
+the fifteen flags from a single "collapsibility predicate." Better than
+enumerating them — but it asserted that materialization is a view rather than a
+property of the molecule, then immediately contradicted itself by making it a
+molecule state with a lossy transform.
+
+Revision 2 takes the claim seriously: **hydrogens are always graph nodes, and
+the implicit/explicit distinction is a property of *iteration*** —
+`mol.atoms()` versus `mol.heavy_atoms()`, chosen per call site. Consequences:
+
+- "Where do properties live" gets one answer: on the hydrogen node, always.
+  Isotope, atom map, charge, wedge role, SGroup membership all have exactly one
+  home, because the node always exists.
+- The collapsibility predicate becomes *unnecessary* rather than
+  well-factored. The fifteen flags do not need deriving; there is no lossy
+  transform for them to guard. `_isotopicHs` goes away for the same reason.
+- Provenance survives, but splits: on `Mol` it is a serialization annotation
+  (`[CH3]` and `C` give identical graphs), while on `Query` the
+  specified/unspecified distinction is core matching semantics. RDKit's
+  `numExplicitHs`/`noImplicit` pair was carrying both at once, which is why it
+  reads as incoherent.
+- The typestate problem partly answers itself: no `HExplicit`/`HImplicit`
+  parameter is needed, just `Mol<Sanitized>`.
+- Stereo should simplify — every stereocenter has four real neighbors, every
+  wedge bond a real endpoint, so the phantom-neighbor special-casing in
+  `Chirality.cpp` should shrink. Unmeasured; recorded as a hypothesis.
+
+Costs, in order of severity: **queries cannot use this representation** (a
+SMARTS `[CH3]` is a constraint, not an assertion; `[C]` has no materialized
+form), forcing a `Mol`/`Query` type split — arguably correct anyway, since
+RDKit stores query atoms inside `RWMol` and that ambiguity leaks everywhere.
+Then memory, roughly 2x atoms and more than 2x bonds — traversal cost is
+recoverable by storing atoms heavy-first so `heavy_atoms()` is a contiguous
+slice, but that breaks atom-index stability, which downstream code depends on
+and which fails silently. Then porting the SMIRKS catalogs, which assume
+implicit-H semantics.
+
+The general lesson, and the main reason to keep going: a meaningful fraction of
+what looks like cruft turns out to be load-bearing for a case that would
+otherwise break — and the reverse also holds, since revision 1's carefully
+derived predicate turned out to be solving a problem the design did not need to
+have. Finding out which is which *is* the work, and it is not parallelizable
+across people.
 
 ## Cost estimate
 
@@ -156,8 +193,14 @@ most of it spent reading RDKit to learn *why* each wart exists.
   is the signal to stop early.
 - If it converges, write the valence-model spec next — the hydrogen spec assumes
   one exists, and it is the immediate blocker.
-- Resolve the typestate encoding question (§6) before it metastasizes across
-  every signature; two type parameters is already awkward.
+- Prototype the `Mol`/`Query` split to find out how much it duplicates. If
+  matching, traversal, and serialization each need two implementations, the fork
+  is expensive and the always-explicit design gets materially less attractive.
+- Benchmark always-explicit with heavy-first partitioning against RDKit on
+  fingerprinting, to test the claim that traversal cost is recoverable and only
+  memory is paid.
+- Design a migration story for opaque atom indices before adopting heavy-first
+  storage; the breakage is silent, which is the worst kind.
 - Survey prior art properly, especially Richard Apodaca's `chemcore`/`purr`
   work, specifically for *where it stopped* — that is an empirical cost
   estimate.

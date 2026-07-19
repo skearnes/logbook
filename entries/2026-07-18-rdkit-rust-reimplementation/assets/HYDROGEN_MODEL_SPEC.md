@@ -179,11 +179,84 @@ So the type hierarchy forks:
 Substructure matching is then `match(query: &Query, target: &Mol)`, operating
 across two representations by design rather than by accident.
 
-This fork is a real cost — every SMARTS-driven subsystem sits on the seam,
-including MolStandardize's 145 tautomer transforms and 68 normalizations. But it
-is also a genuine improvement: RDKit stores query atoms inside `RWMol`, so every
-consumer of a molecule must consider whether it might be holding a query, and
-that ambiguity leaks throughout the codebase.
+Critically, **queries and transforms are still authored without explicit
+hydrogens**. `[CH3]` stays `[CH3]`; nobody writes out three `[H]` nodes. The
+pattern matches over the target's heavy view, evaluating `H` against the derived
+`total_h` of §3.2. Matches therefore return heavy-atom handles only, with the
+attached hydrogens reachable via `atom.hydrogens()` when a caller wants them.
+
+The always-explicit representation is thus invisible to rule authors. This is
+what makes the fork affordable: MolStandardize's 145 tautomer transforms and 68
+normalizations are authored against implicit-H semantics and stay that way (but
+see §3.7 for the transform-side caveat).
+
+The fork is still a genuine improvement on its own merits: RDKit stores query
+atoms inside `RWMol`, so every consumer of a molecule must consider whether it
+might be holding a query, and that ambiguity leaks throughout the codebase.
+
+### 3.4.1 The heavy-atom property set
+
+For queries to be authored implicit-H, every property they can test must be
+available on a heavy atom without the caller seeing hydrogen nodes. RDKit
+already defines this set — and it already contains both views:
+
+| SMARTS | RDKit implementation | View |
+| --- | --- | --- |
+| `D` | `getDegree()` (`QueryOps.h:83`) | graph neighbors |
+| `X` | `getTotalDegree()` (`QueryOps.h:86`) | graph neighbors + counts |
+| `h` | `getTotalNumHs(false)` (`QueryOps.h:118`) | counts only |
+| `H` | `getTotalNumHs(true)` (`QueryOps.h:115`) | graph neighbors + counts |
+
+The finding is that these primitives are defined against *storage state* rather
+than chemistry. `getDegree()` returns actual graph neighbors, so `[CD1]` matches
+a methyl carbon while hydrogens are implicit and stops matching it after
+`AddHs`, when the degree becomes 4. The same pattern gives different answers for
+the same molecule depending on an unrelated preprocessing call. `H` and `X` are
+representation-independent; `D` and `h` are not.
+
+Under always-explicit with views, all of them become stable, because there is
+only one representation to be independent of:
+
+- `total_h(atom)` — count of hydrogen neighbors. Backs SMARTS `H`.
+- `heavy_degree(atom)` — count of non-hydrogen neighbors. Backs SMARTS `D`,
+  which now means the same thing permanently.
+- `total_degree(atom)` — all neighbors; equals `heavy_degree + total_h`. Backs
+  SMARTS `X`.
+- `total_valence(atom)` — summed bond orders over all neighbors. Backs `v`.
+- `heavy_valence(atom)` — summed bond orders to heavy neighbors.
+- Ring membership and ring-connection counts, evaluated over the heavy view.
+
+SMARTS `h` — "implicit hydrogen count" — has no referent in this model and
+should be deleted. It is the one primitive that exists purely as an artifact of
+the dual representation.
+
+### 3.4.2 Transforms need a hydrogen reconciliation policy
+
+Queries only read, so §3.4 fully covers them. Transforms write, and that is
+where always-explicit imposes a real obligation.
+
+A rule authored implicit-H — a 1,3 keto-enol shift, say — changes heavy-atom
+bond orders and expects hydrogen counts to follow from valence. Against an
+always-explicit graph, some hydrogen node must physically move from carbon to
+oxygen. The engine therefore has to:
+
+1. Match over the heavy view.
+2. Apply the authored connectivity and bond-order changes to heavy atoms.
+3. Recompute the hydrogen count each affected atom should now carry.
+4. Reconcile: add, remove, or move actual hydrogen nodes to match.
+
+Steps 3–4 reintroduce valence inference — but *scoped to the transform engine*
+rather than pervading the data model, which is the right place for it.
+
+Step 4 has a genuine ambiguity: **which hydrogen moves?** When the candidates are
+chemically equivalent it does not matter. When one is deuterium it matters a
+great deal, and a rule authored in implicit-H terms has no way to express the
+choice. This model does not create that problem — RDKit has it too, and handles
+it with the `_isotopicHs` side channel — but it does force it into the open,
+where it must be settled as a stated policy (for example: prefer moving a
+default-isotope hydrogen; move an isotope-labeled one only when it is the sole
+candidate). An explicit policy is an improvement over emergent behavior, but it
+is unavoidable work rather than a free win.
 
 ### 3.5 Representation
 
@@ -252,6 +325,11 @@ lives on it permanently.
 - The fifteen removal flags disappear rather than being derived.
 - The `_isotopicHs` side channel disappears.
 - Every property has exactly one home, because the node always exists.
+- Queries and transforms are still authored implicit-H, so the SMIRKS catalogs
+  port unchanged (modulo the reconciliation policy of §3.4.2).
+- SMARTS `D` becomes representation-independent: `[CD1]` matches a methyl carbon
+  unconditionally, rather than silently ceasing to match after `AddHs`.
+- SMARTS `h` is deleted, having no referent once there is one representation.
 - Stereo perception simplifies: a tetrahedral center always has four real
   neighbors and a wedge bond always has a real endpoint, so the phantom-neighbor
   special-casing threaded through `Chirality.cpp` (4k lines) should shrink.
@@ -270,10 +348,11 @@ lives on it permanently.
 - **How much does `Query` duplicate?** If `Query` and `Mol` share little, the
   fork is cheap; if matching, traversal, and serialization all need two
   implementations, it is expensive. Worth prototyping before committing.
-- **Porting SMIRKS transforms.** The tautomer and normalization catalogs are
-  authored against implicit-H semantics. Rewriting them for always-explicit
-  targets is real work with behavioral risk, in exactly the Tier 3 area where no
-  spec exists to check against.
+- **The hydrogen reconciliation policy (§3.4.2).** Which hydrogen node moves
+  when an implicit-H-authored transform changes a heavy atom's hydrogen count?
+  Irrelevant for equivalent hydrogens, decisive when one is isotope-labeled.
+  Needs to be stated, and the stated policy needs checking against RDKit's
+  emergent behavior on the tautomer catalog to see how often they diverge.
 - **Memory at scale.** Doubling atom count matters for billion-compound
   libraries. Does a compressed on-disk form that inflates on load suffice, or
   does the in-memory representation itself need a count-based variant for
@@ -302,6 +381,14 @@ The spec is only worth anything if it can be checked against reality:
 6. Measure the memory and traversal cost of always-explicit with heavy-first
    partitioning against RDKit on a fingerprinting benchmark, to test the §3.5
    claim that traversal cost is recoverable.
+7. Confirm the `D` instability of §3.4.1 empirically: match `[CD1]` against a
+   molecule before and after `AddHs` and check the results differ. Then count
+   how many patterns across RDKit's shipped catalogs (tautomer transforms,
+   normalizations, fragment and filter catalogs) use `D` or `h`, to size how
+   much real-world behavior the change touches.
+8. Replay the tautomer catalog under a stated reconciliation policy (§3.4.2) and
+   diff against RDKit's output, to find how often the isotope ambiguity is
+   actually reached.
 
 Steps 1–5 are deliberate: they cost days in Python, require no Rust, and a high
 disagreement rate is the signal to stop before committing to an implementation.
@@ -328,3 +415,16 @@ for them to guard. The cost is that queries no longer fit the representation,
 forcing the `Mol`/`Query` split of §3.4 — which is arguably correct on its own
 merits, but is now a load-bearing part of the design rather than an incidental
 cleanup.
+
+Revision 2 initially treated that split as expensive, on the assumption that
+SMIRKS catalogs would need rewriting against explicit-H targets. That was wrong:
+the view abstraction extends to *authoring*, not just iteration, so patterns stay
+implicit-H and match against the target's heavy view (§3.4). What survives of
+the objection is narrower and lives in transforms rather than queries — the
+reconciliation policy of §3.4.2.
+
+Investigating that led to the §3.4.1 finding, which is the best evidence so far
+that the design is right: RDKit's SMARTS language *already* carries both views
+as separate primitives (`D`/`X`, `h`/`H`), but binds two of them to storage
+state rather than to chemistry. The language wanted this model; the data model
+did not supply it.

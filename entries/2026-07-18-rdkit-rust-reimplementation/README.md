@@ -170,8 +170,46 @@ RDKit stores query atoms inside `RWMol` and that ambiguity leaks everywhere.
 Then memory, roughly 2x atoms and more than 2x bonds — traversal cost is
 recoverable by storing atoms heavy-first so `heavy_atoms()` is a contiguous
 slice, but that breaks atom-index stability, which downstream code depends on
-and which fails silently. Then porting the SMIRKS catalogs, which assume
-implicit-H semantics.
+and which fails silently.
+
+### The view abstraction extends to authoring
+
+The initial read was that the `Mol`/`Query` split would be expensive because the
+SMIRKS catalogs assume implicit-H semantics and would need rewriting. That was
+wrong. Views apply to *authoring* as well as iteration: patterns stay written as
+`[CH3]`, matching against the target's heavy view, so the 145 tautomer
+transforms port unchanged. Matches return heavy-atom handles, with hydrogens
+reachable on demand.
+
+This requires the heavy-atom property set to be complete — `total_h`,
+`heavy_degree`, `total_degree`, valences, ring properties — which is what makes
+the representation invisible to rule authors.
+
+**The best evidence yet that this design is right:** RDKit's SMARTS language
+already carries both views as distinct primitives (`QueryOps.h:83-120`) —
+
+| SMARTS | Implementation | View |
+| --- | --- | --- |
+| `D` | `getDegree()` | graph neighbors |
+| `X` | `getTotalDegree()` | graph + counts |
+| `h` | `getTotalNumHs(false)` | counts only |
+| `H` | `getTotalNumHs(true)` | graph + counts |
+
+— but binds two of them to *storage state* rather than chemistry. `getDegree()`
+counts real graph neighbors, so `[CD1]` matches a methyl carbon while hydrogens
+are implicit and silently stops matching after `AddHs`. `H` and `X` are
+representation-independent; `D` and `h` are not. The query language wanted this
+model all along; the data model failed to supply it. Under always-explicit,
+`D` becomes permanently stable and `h` is deleted for having no referent.
+
+What survives of the objection is narrower and sits in transforms rather than
+queries: transforms *write*, so when a rule changes a heavy atom's hydrogen
+count, some H node must actually move, and the engine needs a stated policy for
+**which one**. Irrelevant for equivalent hydrogens; decisive when one is
+deuterium, which an implicit-H-authored rule cannot express. RDKit has the same
+ambiguity and hides it in the `_isotopicHs` side channel; this design forces it
+into the open as an explicit policy. Real work, but far smaller than rewriting
+the catalogs.
 
 The general lesson, and the main reason to keep going: a meaningful fraction of
 what looks like cruft turns out to be load-bearing for a case that would
@@ -196,6 +234,11 @@ most of it spent reading RDKit to learn *why* each wart exists.
 - Prototype the `Mol`/`Query` split to find out how much it duplicates. If
   matching, traversal, and serialization each need two implementations, the fork
   is expensive and the always-explicit design gets materially less attractive.
+- Confirm the `[CD1]`-before-and-after-`AddHs` instability empirically, then
+  count how many patterns in RDKit's shipped catalogs use `D` or `h`, to size
+  how much real behavior the change touches.
+- State a hydrogen reconciliation policy, replay the tautomer catalog under it,
+  and diff against RDKit to see how often the isotope ambiguity is reached.
 - Benchmark always-explicit with heavy-first partitioning against RDKit on
   fingerprinting, to test the claim that traversal cost is recoverable and only
   memory is paid.

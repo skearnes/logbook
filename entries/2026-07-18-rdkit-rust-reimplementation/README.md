@@ -306,6 +306,59 @@ coordinate-bearing format requires those H to have positions, so requesting
 and the caller must place them first. The type system can carry that, and it is
 the second place `CompleteConformer` earns its keep.
 
+### Hydrogen isotopes: a third view, not a redefinition
+
+Proposal considered: always treat D/T as heavy atoms. The case for it is
+principled — `heavy_atoms()` exists to skip atoms that are numerous *and*
+recoverable from valence, and D/T are neither.
+
+It breaks the degree identity, though. The model relies on
+`total_degree = heavy_degree + total_h`; for deuterated acetic acid's methyl
+carbon, D-heavy-and-still-counted-as-H gives `4 + 3 = 7` against a
+`total_degree` of 4. So **"D is a heavy atom" and "`[CH3]` matches CD3" cannot
+both hold**, and RDKit takes the second branch (verified: `[CH3]` matches the
+CD3 carbon).
+
+That default matters: substructure search is isotope-blind today, so an acetic
+acid query finds the deuterated compound. A global D-is-heavy rule silently
+loses deuterated analogues from database searches — false negatives, no error,
+on exactly the compounds a deuterated-drug program cares about.
+
+**RDKit's own answer was "both."** It keeps `queryAtomNonHydrogenDegree` (D/T
+non-hydrogen) and `queryAtomHeavyAtomDegree` (D/T not heavy) side by side, with
+the disagreement recorded in comments at `QueryOps.h:89` and `:102`. And the
+library is inconsistent in a revealing way — measured on 2026.03.4, matching is
+isotope-*blind* while Morgan fingerprints are isotope-*aware*. Both are
+defensible: search wants recall, fingerprints want discrimination, since a
+deuterated drug really is a different molecule. The right answer is
+subsystem-dependent, so any global rule re-creates the problem for whoever loses.
+
+**Resolution: the question dissolves.** Deuterium is hydrogen, *and* it is
+non-collapsible. Two independent facts, both already tracked, no interaction:
+
+| Fact | Mechanism | Consequence |
+| --- | --- | --- |
+| D is hydrogen | atomic number 1 | counts in `total_h`, not `heavy_degree`; degree identity holds; search keeps isotope-blind recall |
+| D is non-collapsible | non-default isotope | always written as a node; never relocated by a transform; visible to isotope-aware algorithms |
+
+Neither needs a new rule — "carries a non-default isotope" was already the first
+entry in the collapsibility predicate, so hydrogen isotopes were handled
+correctly before the question was asked. Reclassifying D as heavy would have been
+a *second* mechanism for a property the model already expressed, and a harmful
+one, since it breaks the identity and silently narrows searches.
+
+This mirrors the provenance/materialization split: a distinction that keeps
+resolving into two independent bits suggests the seams are in the right places.
+
+What's left is presentational — whether to expose the collapsible partition as an
+iteration view (`skeleton_atoms()`) so fingerprints and descriptors get
+isotope-awareness without re-deriving the predicate. Convenience API over an
+existing rule, not a concept in the model.
+
+That predicate now does triple duty regardless — serialization floor, transform
+reconciliation, isotope-aware iteration. Three unrelated jobs from one rule is
+the strongest signal yet that it is the real primitive here.
+
 ### Where leaning in actually strains: coordinates
 
 Geometry, not chemistry, is the real cost — though the first analysis of it was

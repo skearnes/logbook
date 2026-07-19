@@ -288,9 +288,14 @@ observe.
 The remaining properties are stable under always-explicit and need no
 redefinition:
 
-- `total_h(atom)` — count of hydrogen neighbors. Backs SMARTS `H`.
-- `heavy_degree(atom)` — count of non-hydrogen neighbors. Backs SMARTS `D`,
-  which now means the same thing permanently.
+- `total_h(atom)` — count of hydrogen neighbors, isotope-blind (so deuterium
+  counts; see §3.4.7). Backs SMARTS `H`.
+- `heavy_degree(atom)` — count of neighbors with atomic number greater than one.
+  Backs SMARTS `D`, which now means the same thing permanently.
+- `skeleton_degree(atom)` — optional convenience: count of non-collapsible
+  neighbors, i.e. heavy atoms plus isotope-labeled hydrogens (§3.4.7). Derived
+  from the collapsibility predicate rather than a primitive, and deliberately
+  outside the degree identity below — an overlapping lens, not a partition.
 - `total_degree(atom)` — all neighbors; equals `heavy_degree + total_h`. Backs
   SMARTS `X`.
 - `total_valence(atom)` — summed bond orders over all neighbors. Backs `v`.
@@ -462,6 +467,95 @@ Specification-exact semantics are then available on request, the data model
 stays uncontaminated, and legacy pattern files — the case that actually wants
 legacy semantics — get them. The divergence becomes a default rather than an
 absolute.
+
+### 3.4.7 Hydrogen isotopes: a third view, not a redefinition
+
+Should deuterium and tritium be treated as heavy atoms?
+
+The case for it is principled rather than merely intuitive: `heavy_atoms()`
+exists to skip atoms that are both numerous and recoverable from valence, and
+D/T are neither. By the view's own purpose they belong in it.
+
+**But making the change globally breaks the degree identity.** The model relies
+on `total_degree = heavy_degree + total_h`. For the methyl carbon of deuterated
+acetic acid:
+
+| Rule | `heavy_degree` | `total_h` | Sum | `total_degree` |
+| --- | --- | --- | --- | --- |
+| D heavy, excluded from `total_h` | 4 | 0 | 4 | 4 |
+| D heavy, still counted in `total_h` | 4 | 3 | 7 | 4 |
+
+So "D is a heavy atom" and "`[CH3]` matches CD3" cannot both hold. RDKit takes
+the second branch — verified on 2026.03.4, `[CH3]` matches the CD3 carbon,
+because `getTotalNumHs` counts neighbors by atomic number without regard to
+isotope.
+
+That default matters. Substructure search is isotope-blind today: an acetic acid
+query matches the deuterated compound. Under a global D-is-heavy rule it would
+not, so a database search would silently lose deuterated analogues — false
+negatives with no error raised, on exactly the compounds a deuterated-drug
+program cares about.
+
+#### RDKit's own answer was "both"
+
+RDKit maintains two notions of not-hydrogen side by side, with the disagreement
+recorded in comments (`QueryOps.h:89`, `:102`):
+
+```cpp
+//! D and T are treated as "non-hydrogen" here
+queryAtomNonHydrogenDegree  // nbr->getAtomicNum() != 1 || nbr->getIsotope() > 1
+
+//! D and T are not treated as heavy atoms here
+queryAtomHeavyAtomDegree    // nbr->getAtomicNum() > 1
+```
+
+The inconsistency runs through the library. Measured on 2026.03.4: substructure
+matching is isotope-*blind* (an acetic acid query matches the deuterated
+compound), while Morgan fingerprints are isotope-*aware* (CD3 and CH3 give
+different fingerprints).
+
+Both defaults are defensible. Search wants recall; fingerprints want
+discrimination, because a deuterated drug really is a different molecule with
+different pharmacokinetics. This is evidence that the correct answer is
+subsystem-dependent, and that any single global rule re-creates the problem for
+whichever callers lose.
+
+#### Resolution: the question dissolves
+
+Deuterium is hydrogen. It is also non-collapsible. These are two independent
+facts, the model already tracks both, and they do not interact:
+
+| Fact | Mechanism | Consequence |
+| --- | --- | --- |
+| D is hydrogen | atomic number 1 | counts in `total_h`, not in `heavy_degree`; the degree identity holds; isotope-blind search keeps its recall |
+| D is non-collapsible | carries a non-default isotope | always written as a node; never relocated by a transform; visible to any isotope-aware algorithm |
+
+No new rule is required for either. "Carries a non-default isotope" was already
+the first entry in the collapsibility predicate of §3.4.5, so hydrogen isotopes
+were being handled correctly before the question was asked. Reclassifying D as a
+heavy atom would have been a second mechanism for a property the model already
+expressed, and — per the table above — an actively harmful one, since it breaks
+the degree identity and silently narrows search results.
+
+This mirrors §3.3, where provenance and materialization turned out to be
+orthogonal rather than a single muddled concept. A distinction that keeps
+resolving into two independent bits is a sign the seams are in the right places.
+
+The only remaining decision is presentational: whether to expose the collapsible
+partition as an iteration view, say `skeleton_atoms()` for "heavy atoms plus
+isotope-labeled hydrogens," so that fingerprints and descriptors can be
+isotope-aware without each re-deriving the predicate. That is a convenience API
+over an existing rule rather than a concept in the model, and it can be added or
+dropped without affecting anything else here.
+
+Worth noting regardless: §3.4.3's reconciliation ambiguity dissolves by the same
+route, since transforms relocate only collapsible hydrogens and therefore never
+silently move a deuterium.
+
+The predicate thus serves three unrelated purposes — the serialization floor,
+transform reconciliation, and isotope-aware iteration. Three independent jobs
+falling out of one rule is the strongest indication so far that it is the real
+primitive in this design rather than a convenience.
 
 ### 3.5 Representation
 

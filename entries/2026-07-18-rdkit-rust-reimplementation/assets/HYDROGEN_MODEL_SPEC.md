@@ -380,10 +380,71 @@ was lossy and induced molecule states; as a writer policy it destroys nothing,
 tracks no partial state, and expresses precisely what belongs in a serializer —
 what the target format can represent.
 
-One case resists derivation: "this molfile drew its hydrogens explicitly and
-byte-fidelity is wanted." That is a genuine stored annotation, but it is
-per-file in practice and, critically, is still read only by the writer. It
-passes the test.
+#### The predicate is a floor, not a rule
+
+Because a writer needs this logic regardless, it should expose the choice rather
+than hard-code one answer. The predicate determines the *minimum* set of
+hydrogens that must appear as nodes; anything above that is style:
+
+```text
+required(H)  ⊆  written(H)  ⊆  all(H)
+```
+
+A writer policy selects within that range:
+
+```rust
+enum HydrogenOutput {
+    Minimal,   // required only
+    All,       // every hydrogen node
+    Polar,     // required, plus hydrogens on N, O, S
+    AsLoaded,  // required, plus whatever the source materialized
+}
+```
+
+The valuable property is that **policy cannot produce lossy output**. The floor
+is enforced whatever the caller asks for, so a request for `Minimal` still writes
+an isotope-labeled hydrogen as a node. Policy varies style; it cannot vary
+correctness.
+
+This also retires the exception noted in earlier drafts. "This molfile drew its
+hydrogens explicitly and byte-fidelity is wanted" is no longer a case the
+predicate cannot derive — it is the `AsLoaded` policy, with the stored
+per-file annotation as its input rather than as a special case in the writer.
+
+The policy space is genuinely richer than minimal-versus-all, which is itself
+the argument for making it explicit. `Polar` is widespread — PDB convention,
+docking preparation, force-field setup — and depiction often wants only the
+hydrogens that define stereo. Neither is derivable from the floor; both are
+chemistry-driven choices that belong to the caller.
+
+#### The floor is format-dependent
+
+`required` is parameterized by the target format, because formats differ in what
+their count mechanism can carry. A molfile `HCOUNT` field cannot hold an isotope;
+SMILES cannot atom-map an individual hydrogen, since `[CH3:1]` maps the carbon.
+The shape of the predicate is constant, but its result is not.
+
+Formats also fall into two classes that differ in kind:
+
+- **With a count mechanism** (SMILES, molfile): suppression folds hydrogens into
+  a count and loses nothing.
+- **Without one** (PDB, XYZ): there is no way to state that a carbon bears three
+  hydrogens, so suppression *discards* them. The floor is effectively
+  all-or-nothing, and minimal output is lossy by construction.
+
+The second class should be flagged as lossy at the API level rather than
+silently accepted, since "write a PDB" quietly meaning "discard all hydrogen
+information" is the kind of default this spec exists to eliminate.
+
+#### Interaction with optional coordinates
+
+Writing hydrogens as nodes to a coordinate-bearing format requires those
+hydrogens to have positions. `HydrogenOutput::All` against a molfile, with a
+conformer whose hydrogen positions are absent (§3.5.1), is therefore not
+satisfiable — the caller must place them first.
+
+This is a constraint the type system can carry rather than a runtime surprise,
+and it is the second place `CompleteConformer` earns its keep.
 
 ### 3.4.6 Daylight compatibility as a matching dialect
 
@@ -571,6 +632,9 @@ lives on it permanently.
   `Mol` (serialization) and `Query` (matching semantics).
 - The fifteen removal flags disappear rather than being derived.
 - The `_isotopicHs` side channel disappears.
+- Hydrogen output becomes an explicit writer policy over a correctness floor
+  (§3.4.5), so `Minimal`, `All`, and `Polar` are one parameter rather than
+  three code paths, and none of them can emit lossy output by accident.
 - Every property has exactly one home, because the node always exists.
 - Queries and transforms are still authored implicit-H, so the SMIRKS catalogs
   port unchanged (modulo the reconciliation policy of §3.4.3).

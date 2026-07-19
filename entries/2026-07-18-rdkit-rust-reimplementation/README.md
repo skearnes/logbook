@@ -270,6 +270,42 @@ matcher derive an implicit/explicit assignment at match time via the same
 predicate. Spec-exact semantics on request, no flag in the data model, and
 legacy pattern files get legacy semantics.
 
+### The predicate is a floor, and writers choose above it
+
+Since a writer needs suppression logic regardless, it should expose the choice
+rather than hard-code one answer. The predicate gives the *minimum* set of
+hydrogens that must appear as nodes; everything above is style:
+
+```text
+required(H)  ⊆  written(H)  ⊆  all(H)
+```
+
+so `Minimal`, `All`, `Polar` (H on N/O/S — PDB convention, docking, force-field
+prep), and `AsLoaded` become one writer parameter. The valuable property is that
+**policy cannot produce lossy output**: the floor is enforced whatever the caller
+asks, so `Minimal` still writes an isotope-labeled H as a node. Style varies,
+correctness does not.
+
+This retires the last exception in the write-time derivation. "This molfile drew
+its H explicitly and I want byte-fidelity" is no longer something the predicate
+can't derive — it's the `AsLoaded` policy, with the stored annotation as input
+rather than a special case.
+
+Two wrinkles. **The floor is format-dependent**, since formats differ in what
+their count mechanism can carry — molfile `HCOUNT` can't hold an isotope, SMILES
+can't map an individual H (`[CH3:1]` maps the carbon). And formats split into two
+classes: those with a count mechanism (SMILES, molfile), where suppression is
+lossless folding, and those without (PDB, XYZ), where there is no way to say "this
+carbon has 3 H" so suppression *discards* them. The second class should be
+flagged lossy at the API level — "write a PDB" silently meaning "drop all
+hydrogen information" is exactly the default this spec exists to remove.
+
+**It also couples to optional coordinates:** writing H as nodes to a
+coordinate-bearing format requires those H to have positions, so requesting
+`All` for a molfile whose conformer has no hydrogen positions is unsatisfiable,
+and the caller must place them first. The type system can carry that, and it is
+the second place `CompleteConformer` earns its keep.
+
 ### Where leaning in actually strains: coordinates
 
 Geometry, not chemistry, is the real cost — though the first analysis of it was

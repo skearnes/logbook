@@ -57,6 +57,27 @@ pre-commit install
 
 Lint rules live in [`.markdownlint-cli2.jsonc`](.markdownlint-cli2.jsonc).
 
+## License
+
+Dual-licensed, following the [Open Reaction Database][ord] split:
+
+- **Prose** — every `README.md` and other Markdown writeup, plus figures — is
+  licensed [CC BY-SA 4.0](LICENSE-CC-BY-SA). Quote and adapt it with
+  attribution; derivative writeups carry the same license.
+- **Code** — the `.py` scripts under each entry's `assets/` — is licensed
+  [Apache-2.0](LICENSE-APACHE). Reuse it in your own projects under those
+  terms.
+
+Where the two could both plausibly apply (a fenced code block inside a
+writeup), take the Apache-2.0 terms.
+
+Third-party benchmark datasets and leaderboard exports (Polaris/ASAP,
+OpenADMET) are **not** redistributed here — they stay with their upstream
+sources under their own licenses, and entries link to where to fetch them.
+Results computed from those datasets are covered by this repo's license.
+
+[ord]: https://github.com/open-reaction-database
+
 [pre-commit]: https://pre-commit.com
 
 [cli2]: https://github.com/DavidAnson/markdownlint-cli2

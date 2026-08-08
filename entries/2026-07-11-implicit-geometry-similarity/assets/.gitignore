@@ -1,3 +1,11 @@
 cache/
 __pycache__/
 *.pyc
+
+# Benchmark datasets and leaderboard exports belong to their upstream sources
+# (Polaris/ASAP, OpenADMET) and are fetched locally rather than vendored here.
+# Only POTS's own scores are tracked. See the entry README for fetch links.
+data/*
+!data/leaderboard/
+data/leaderboard/*
+!data/leaderboard/pots_*

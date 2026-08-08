@@ -200,6 +200,14 @@ What the numbers say:
 
 ## Reproducing
 
+The scripts read benchmark CSVs and split JSONs from `assets/data/`, which is
+not tracked in git — the datasets belong to Polaris/ASAP and OpenADMET and stay
+with those sources. Populate it from the links under
+[References](#references) before running anything below: the ASAP sets from the
+scikit-fingerprints mirror, the ExpansionRx/PXR sets and the final-leaderboard
+exports (`data/leaderboard/exprx_*`, `pxr_*`) from the challenge sites. Only
+POTS's own scores (`data/leaderboard/pots_*`) are committed.
+
 ```bash
 # core deps: rdkit, scikit-learn, numpy, scipy, pandas (base env)
 python run_bench.py asap        # or expansionrx / pxr / openbind / all

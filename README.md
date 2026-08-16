@@ -8,7 +8,7 @@ the writeup plus any assets (images, scripts, data) for that entry.
 
 - **All changes go through a pull request into `main` — never commit or push
   directly to `main`.** Work on a branch, open a PR, and merge it (CI runs the
-  markdown lint on every PR).
+  markdown lint, the metadata check, and the license-header check on every PR).
 - Start a new entry by creating `entries/YYYY-MM-DD-topic/` and copying
   [`TEMPLATE.md`](TEMPLATE.md) into it as `README.md`.
 - Name each directory `entries/YYYY-MM-DD-topic/` (e.g.
@@ -17,6 +17,30 @@ the writeup plus any assets (images, scripts, data) for that entry.
   them with relative paths from the `README.md`.
 - Begin each entry's `README.md` with an H1 title covering the date and topic.
 - Use H2 sections within an entry as needed.
+
+Every Markdown file under `entries/` — an entry's `README.md` and any
+supporting document beside it — opens with a metadata block under its title:
+
+```markdown
+- **Date:** 2026-03-14
+- **Author:** Ada Lovelace
+- **Status:** draft
+- **Tags:** topic, another-topic
+- **License:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+```
+
+`Date` is the entry's date, matching the directory name (and, for a `README.md`,
+the date in its title). `Status` wording is open — qualify it ("final (archive)")
+when that says more than one word can. `License` must read exactly as above.
+Supporting documents need only `Date`, `Author`, and `License`: `Status` and
+`Tags` describe the investigation, which is the entry's job, and are optional
+beside it.
+[`.github/scripts/check_metadata.py`](.github/scripts/check_metadata.py)
+enforces all of this in CI and as a pre-commit hook; run it directly with:
+
+```bash
+python3 .github/scripts/check_metadata.py
+```
 
 ## Large assets
 
@@ -64,12 +88,22 @@ Dual-licensed, following the [Open Reaction Database][ord] split:
 - **Prose** — every `README.md` and other Markdown writeup, plus figures — is
   licensed [CC BY-SA 4.0](LICENSE-CC-BY-SA). Quote and adapt it with
   attribution; derivative writeups carry the same license.
-- **Code** — the `.py` scripts under each entry's `assets/` — is licensed
-  [Apache-2.0](LICENSE-APACHE). Reuse it in your own projects under those
-  terms.
+- **Code** — the `.py` scripts under each entry's `assets/`, plus the workflows
+  and config files — is licensed [Apache-2.0](LICENSE-APACHE). Reuse it in your
+  own projects under those terms.
 
 Where the two could both plausibly apply (a fenced code block inside a
 writeup), take the Apache-2.0 terms.
+
+Every code file carries an Apache-2.0 header. [addlicense][addlicense] adds and
+checks them, as a pre-commit hook and in CI; Markdown has no comment syntax it
+can use, so each Markdown file states its license in the metadata block instead
+(see [Conventions](#conventions)). To stamp new code files locally:
+
+```bash
+go install github.com/google/addlicense@v1.2.0
+addlicense -c "Steven Kearnes" -l apache <files>
+```
 
 Third-party benchmark datasets and leaderboard exports (Polaris/ASAP,
 OpenADMET) are **not** redistributed here — they stay with their upstream
@@ -81,3 +115,5 @@ Results computed from those datasets are covered by this repo's license.
 [pre-commit]: https://pre-commit.com
 
 [cli2]: https://github.com/DavidAnson/markdownlint-cli2
+
+[addlicense]: https://github.com/google/addlicense

@@ -1,5 +1,11 @@
 # Dead Code Cleanup Plan
 
+- **Date:** 2026-07-15
+- **Author:** Steven Kearnes
+- **Status:** draft (survey; nothing deleted yet)
+- **Tags:** rdkit, dead-code, cleanup, survey, planning
+- **License:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
 Survey of deletable dead code across the RDKit tree. Report-first: nothing here
 has been deleted yet. Candidates were found by four parallel sweeps (commented-out
 code, internal unused symbols, orphaned files, unused members/locals) and the

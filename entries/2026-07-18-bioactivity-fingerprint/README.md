@@ -1,5 +1,12 @@
 # 2026-07-18 — A ligand-only fingerprint for bioactivity similarity
 
+- **Date:** 2026-07-18
+- **Author:** Steven Kearnes
+- **Status:** final
+- **Tags:** bioactivity-fingerprint, chembl, distillation, scaffold-hop,
+  activity-cliff, ecfp, benchmark, negative-result
+- **License:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
 ## Summary
 
 Bioactivity fingerprints — representations built from what a compound *does* in

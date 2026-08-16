@@ -1,5 +1,11 @@
 # Compile-Time Reduction Plan
 
+- **Date:** 2026-07-15
+- **Author:** Steven Kearnes
+- **Status:** draft (working planning doc)
+- **Tags:** rdkit, compile-time, build, boost-graph, profiling, planning
+- **License:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
 Working notes — **untracked scratch doc, do not commit.** A plan for cutting RDKit
 C++ build times, ranked by value ÷ effort. Grounded in profiling of this tree
 (macOS / Apple clang 21, C++20).

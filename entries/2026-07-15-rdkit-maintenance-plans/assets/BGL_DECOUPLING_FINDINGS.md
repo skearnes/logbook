@@ -1,5 +1,11 @@
 # Decoupling boost/graph from ROMol.h — prototype findings
 
+- **Date:** 2026-07-15
+- **Author:** Steven Kearnes
+- **Status:** final (prototype measured; handed to maintainers)
+- **Tags:** rdkit, boost-graph, romol, compile-time, prototype, benchmark
+- **License:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
 Working notes — **untracked scratch doc, do not commit.** Prototype + benchmark
 results for plan item #1 (see COMPILE_TIME_PLAN.md). Measured on macOS / Apple
 clang 21, C++20, shared-library build (RDKIT_DYN_LINK), 8 cores.

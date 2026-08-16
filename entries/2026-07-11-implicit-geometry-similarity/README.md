@@ -1,5 +1,12 @@
 # 2026-07-11 — POTS: an implicit-geometry pharmacophore similarity via optimal transport
 
+- **Date:** 2026-07-11
+- **Author:** Steven Kearnes
+- **Status:** final
+- **Tags:** molecular-similarity, pharmacophore, optimal-transport,
+  fused-gromov-wasserstein, ecfp, admet, polaris, benchmark, negative-result
+- **License:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
 ## Summary
 
 A new molecular similarity, **POTS** (Pharmacophore Optimal-Transport

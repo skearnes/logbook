@@ -30,6 +30,13 @@ repos:
           - apache
   - repo: local
     hooks:
+      - id: check-links
+        name: check relative Markdown links
+        entry: python3 .github/scripts/check_links.py
+        language: system
+        files: \.md$
+        # The checker walks every tracked Markdown file itself.
+        pass_filenames: false
       - id: check-metadata
         name: check entry metadata
         entry: python3 .github/scripts/check_metadata.py

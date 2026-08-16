@@ -8,7 +8,8 @@ the writeup plus any assets (images, scripts, data) for that entry.
 
 - **All changes go through a pull request into `main` — never commit or push
   directly to `main`.** Work on a branch, open a PR, and merge it (CI runs the
-  markdown lint, the metadata check, and the license-header check on every PR).
+  markdown lint, the link check, the metadata check, and the license-header
+  check on every PR).
 - Start a new entry by creating `entries/YYYY-MM-DD-topic/` and copying
   [`TEMPLATE.md`](TEMPLATE.md) into it as `README.md`.
 - Name each directory `entries/YYYY-MM-DD-topic/` (e.g.
@@ -40,6 +41,16 @@ enforces all of this in CI and as a pre-commit hook; run it directly with:
 
 ```bash
 python3 .github/scripts/check_metadata.py
+```
+
+Relative links are checked the same way.
+[`.github/scripts/check_links.py`](.github/scripts/check_links.py) verifies that
+every relative link across the tracked Markdown resolves, that any heading
+anchor it names exists, and that link text spelling a path agrees with the path
+it points at. External URLs are not fetched:
+
+```bash
+python3 .github/scripts/check_links.py
 ```
 
 ## Large assets

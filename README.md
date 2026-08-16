@@ -88,9 +88,10 @@ Dual-licensed, following the [Open Reaction Database][ord] split:
 - **Prose** — every `README.md` and other Markdown writeup, plus figures — is
   licensed [CC BY-SA 4.0](LICENSE-CC-BY-SA). Quote and adapt it with
   attribution; derivative writeups carry the same license.
-- **Code** — the `.py` scripts under each entry's `assets/`, plus the workflows
-  and config files — is licensed [Apache-2.0](LICENSE-APACHE). Reuse it in your
-  own projects under those terms.
+- **Code** — the `.py` scripts under each entry's `assets/`, the workflows and
+  scripts under [`.github/`](.github/), and the repository config files — is
+  licensed [Apache-2.0](LICENSE-APACHE). Reuse it in your own projects under
+  those terms.
 
 Where the two could both plausibly apply (a fenced code block inside a
 writeup), take the Apache-2.0 terms.

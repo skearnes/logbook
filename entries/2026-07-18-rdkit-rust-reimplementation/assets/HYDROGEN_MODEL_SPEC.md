@@ -1,5 +1,12 @@
 # Hydrogen model specification (draft)
 
+- **Date:** 2026-07-18
+- **Author:** Steven Kearnes
+- **Status:** draft for discussion
+- **Tags:** rdkit, rust, hydrogen-model, specification, sanitization,
+  clean-room
+- **License:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
 A worked example of the "specify, then implement" approach to a clean-room
 cheminformatics core. The goal is not to describe what RDKit does, but to state
 what a hydrogen model *should* be, using RDKit's behavior as evidence for which

@@ -12,21 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: markdownlint
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-
-permissions:
-  contents: read
-
-jobs:
-  markdownlint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
-        with:
-          globs: "**/*.md"
+# Actions in .github/workflows are pinned to commit SHAs. Dependabot rewrites
+# both the SHA and its trailing version comment, which is what keeps a pinned
+# workflow from freezing on whatever was current the day it was written.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      # One pull request per month for all actions rather than one per action.
+      actions:
+        patterns:
+          - "*"

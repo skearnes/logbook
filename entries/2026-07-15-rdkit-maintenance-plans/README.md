@@ -1,5 +1,12 @@
 # 2026-07-15 — RDKit maintenance planning docs
 
+- **Date:** 2026-07-15
+- **Author:** Steven Kearnes
+- **Status:** final (archive)
+- **Tags:** rdkit, maintenance, compile-time, boost, api-ergonomics, dead-code,
+  planning
+- **License:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
 ## Summary
 
 Archive of five planning/findings documents written while investigating RDKit

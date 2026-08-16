@@ -1,5 +1,12 @@
 # 2026-07-18 — Reimplementing RDKit in Rust: scoping and a specs-first pivot
 
+- **Date:** 2026-07-18
+- **Author:** Steven Kearnes
+- **Status:** final (scoping; hydrogen spec in progress)
+- **Tags:** rdkit, rust, reimplementation, scoping, hydrogen-model,
+  specification, sanitization
+- **License:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
 ## Summary
 
 Scoping conversation on what it would take to reimplement RDKit in Rust. The

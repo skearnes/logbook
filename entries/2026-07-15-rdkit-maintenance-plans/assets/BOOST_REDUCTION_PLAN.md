@@ -1,5 +1,11 @@
 # Reducing RDKit's Dependence on Boost
 
+- **Date:** 2026-07-15
+- **Author:** Steven Kearnes
+- **Status:** draft (working planning doc)
+- **Tags:** rdkit, boost, dependencies, build, planning
+- **License:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
 Working planning doc. Grounded in a header-by-header inventory of `Code/` (1,271 C++
 files; 366 include some Boost header). Counts below are file counts under `Code/`.
 

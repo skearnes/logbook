@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: markdownlint
+name: licenses
 
 on:
   push:
@@ -23,10 +23,14 @@ permissions:
   contents: read
 
 jobs:
-  markdownlint:
+  licenses:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          globs: "**/*.md"
+          go-version: ">=1.16"
+      - name: Install addlicense
+        run: go install github.com/google/addlicense@v1.2.0
+      - name: Check license headers
+        run: '"${HOME}/go/bin/addlicense" -check -c "Steven Kearnes" -l apache .'

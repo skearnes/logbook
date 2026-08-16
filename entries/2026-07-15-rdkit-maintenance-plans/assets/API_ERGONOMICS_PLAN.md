@@ -1,5 +1,11 @@
 # RDKit Python API Ergonomics: Findings & Improvement Plan
 
+- **Date:** 2026-07-15
+- **Author:** Steven Kearnes
+- **Status:** draft for discussion
+- **Tags:** rdkit, python-api, ergonomics, documentation, planning
+- **License:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
 Status: draft for discussion. Scope: the **Python** API, especially for newer/casual users.
 
 ---

@@ -2,6 +2,7 @@
 
 - **Date:** 2026-09-12
 - **Author:** Steven Kearnes
+- **Acknowledgments:** Prepared with [Claude Code](https://claude.com/claude-code) (Claude Opus 5)
 - **Status:** draft (working)
 - **Tags:** rdkit, next-generation, api-design, cpp20, cpp-modules, nanobind,
   packaging, conda-forge, proposal

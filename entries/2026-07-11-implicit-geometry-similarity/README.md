@@ -2,6 +2,7 @@
 
 - **Date:** 2026-07-11
 - **Author:** Steven Kearnes
+- **Acknowledgments:** Prepared with [Claude Code](https://claude.com/claude-code) (Claude Opus 4.7)
 - **Status:** final
 - **Tags:** molecular-similarity, pharmacophore, optimal-transport,
   fused-gromov-wasserstein, ecfp, admet, polaris, benchmark, negative-result

@@ -96,7 +96,7 @@ dependencies come from each `rdkit_library()` call's `LINK_LIBRARIES`.
 
 ### How TensorFlow and pydantic ship two generations
 
-TensorFlow is the closer analogue, a C++ core under a Python API:
+TensorFlow is the closer analog, a C++ core under a Python API:
 
 - TensorFlow 2 gave `tf` to the new API and kept 1.x as `tf.compat.v1`. Release
   1.14 added `tf.compat.v2` so libraries could publish code that runs on both.

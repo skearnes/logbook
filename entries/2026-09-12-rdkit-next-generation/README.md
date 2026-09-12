@@ -249,8 +249,8 @@ Consequences:
 
 ### 6. `rdkit.v3`
 
-- The Python subpackage is `rdkit.v3`. In C++ the namespace is `rdkit::v3`, with
-  headers under `rdkit/v3/`, and any future C++ modules are `rdkit.v3.*`.
+- The Python subpackage is `rdkit.v3`, with headers under `rdkit/v3/` and any
+  future C++ modules named `rdkit.v3.*`.
 - Why `v3`:
   - it stays accurate once it is the recommended API;
   - it follows `RDKit::v1` (the original C++ API) and `RDKit::v2` (2024.03);
@@ -258,9 +258,24 @@ Consequences:
   - it clashes with no subpackage, even ignoring case, and can't be confused
     with RDKit's year.month releases.
 - The docs need a sentence on why Python has no `rdkit.v2`.
-- The namespace isn't `RDKit::v3`, because names the new code doesn't define
-  would fall back to the enclosing `RDKit` namespace and silently reach existing
-  functions. The tree has no lowercase `rdkit` namespace.
+- **Proposed C++ namespace: `rdkit::v3`.**
+  - Unqualified names resolve through enclosing namespaces, and no language
+    feature prevents that, even in out-of-line definitions. Under `rdkit::v3`
+    the enclosing `rdkit` declares nothing, so the compiler rejects existing
+    names used without `RDKit::`.
+  - Later generations become `rdkit::v4` and so on, and sibling namespaces
+    aren't searched.
+  - The only lint needed bans `using namespace RDKit` in the new directory.
+  - The cost is two top-level namespaces that differ only by case. The tree has
+    no lowercase `rdkit` namespace.
+- **Alternative: `RDKit::v3` with a linter.** It keeps one top-level namespace,
+  but unqualified names fall back to `RDKit` and silently reach existing
+  functions. Blocking that takes a custom Clang check (clang-query or
+  clang-tidy) covering names in expressions, types, and templates, maintained
+  across Clang versions.
+- In either namespace, argument-dependent lookup finds `RDKit` functions for
+  `RDKit` arguments, which implementation code that wraps existing objects
+  relies on.
 - Python names follow PEP 8: snake_case functions, methods, and modules, and
   CapWords classes. The existing API keeps its names and modules.
 - The bindings use nanobind only.
@@ -348,7 +363,8 @@ Revisiting the top-level imports must preserve:
 - In a nanobind build, prototype copying an existing `Mol` into a stand-in
   `rdkit.v3` type and back.
 - Specify the CI checks: include boundary, self-contained headers, no internal
-  linkage in headers, and no component cycles.
+  linkage in headers, no component cycles, and the namespace rule from
+  Decision 6.
 - Build a wrapper module over `ROMol.h`, plus a module importing it, with
   conda-forge's `gxx` 15, `clangxx` 21, and `vs2022`. This checks one of
   Decision 4's adoption conditions.

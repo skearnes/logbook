@@ -35,7 +35,10 @@ the date in its title). `Status` wording is open — qualify it ("final (archive
 when that says more than one word can. `License` must read exactly as above.
 Supporting documents need only `Date`, `Author`, and `License`: `Status` and
 `Tags` describe the investigation, which is the entry's job, and are optional
-beside it.
+beside it. A document prepared with Claude adds an `Acknowledgments` line after
+`Author` that names Claude Code and the model, as in
+`- **Acknowledgments:** Prepared with [Claude Code](https://claude.com/claude-code) (Claude Opus 5)`;
+delete the line from the template otherwise.
 [`.github/scripts/check_metadata.py`](.github/scripts/check_metadata.py)
 enforces all of this in CI and as a pre-commit hook; run it directly with:
 

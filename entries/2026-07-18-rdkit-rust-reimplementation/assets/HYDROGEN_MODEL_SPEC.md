@@ -2,6 +2,7 @@
 
 - **Date:** 2026-07-18
 - **Author:** Steven Kearnes
+- **Acknowledgments:** Prepared with [Claude Code](https://claude.com/claude-code) (Claude Opus 4.8)
 - **Status:** draft for discussion
 - **Tags:** rdkit, rust, hydrogen-model, specification, sanitization,
   clean-room

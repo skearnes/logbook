@@ -2,6 +2,7 @@
 
 - **Date:** 2026-07-15
 - **Author:** Steven Kearnes
+- **Acknowledgments:** Prepared with [Claude Code](https://claude.com/claude-code) (Claude Fable 5)
 - **Status:** final (archive)
 - **Tags:** rdkit, maintenance, compile-time, boost, api-ergonomics, dead-code,
   planning

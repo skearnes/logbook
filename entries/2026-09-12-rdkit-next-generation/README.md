@@ -28,20 +28,17 @@ Decisions so far:
 Which types below the molecule it re-exports, and whether that code becomes a
 layer both APIs share, is open.
 
-Follows
-[2026-07-18 — Reimplementing RDKit in Rust](../2026-07-18-rdkit-rust-reimplementation/README.md)
-and the
+Follows the
 [2026-07-15 maintenance plans](../2026-07-15-rdkit-maintenance-plans/README.md).
 Measured against RDKit `master` at `23378a7` (2026-09-12) and conda-forge
 `rdkit-feedstock` at `6918f4e` (rdkit 2026.03.6).
 
 ## Constraints
 
-From feedback on the July entries:
+From earlier feedback:
 
 - Existing code keeps working; API changes are otherwise welcome.
-- C++20 or newer, no Rust. Rust's July appeal, typestate, becomes a C++ API
-  question (Decision 1). C++ modules are welcome once support matures, but not
+- C++20 or newer. C++ modules are welcome once support matures, but not
   required.
 - One package: installing `rdkit` provides both generations, the way pydantic 2
   ships `pydantic.v1`.
@@ -540,7 +537,10 @@ share bound types.
 - How PyPI wheels ship `rdkit.v3`, and what that does to wheel size.
 - Which RDKit splits beyond the new directory are worth making, and when.
 - Which accessors need inlining before modules arrive.
-- How behavior that differs between the two APIs is documented and tested.
+- How behavior that differs between the two APIs is documented and tested; the
+  July
+  [spec triage](../2026-07-18-rdkit-rust-reimplementation/README.md#triage-which-areas-admit-specs)
+  sorts areas by whether a spec keeps, changes, or can't define their behavior.
 
 ## Next steps
 

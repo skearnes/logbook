@@ -224,10 +224,9 @@ doesn't:
 
 ## Decisions
 
-Each decision ends with a strict alternative: how it would work, what it would
-enable, why it isn't the choice now, and when to adopt it. Strictness that a
-future capability such as C++ modules needs is worth adopting early when it is
-cheap.
+Each decision has a strict alternative: how it would work, what it would enable,
+why it isn't the choice now, and when to adopt it. Strictness that a future
+capability such as C++ modules needs is worth adopting early when it is cheap.
 
 ### 1. The new API owns the types whose rules it changes
 
@@ -275,17 +274,18 @@ a recorded price:
 - in Python it keeps its existing class and names unless `rdkit.v3` wraps it
   (Decision 6).
 
-Strict alternative: own every type.
-
-- **How.** Wrap points and bit vectors too, so public headers include no
-  existing header.
-- **Enables.** No re-export costs, and no existing headers, macros, or Boost in
-  module interfaces.
-- **Not now.** Every value type would need a wrapper and a copy at each
-  boundary, against the constraint on duplicated code, and modules don't require
-  it (Decision 4).
-- **Adopt when.** A re-exported type needs a new representation, or a module
-  interface must not reach existing headers.
+> [!NOTE]
+> **Strict alternative: own every type.**
+>
+> - **How.** Wrap points and bit vectors too, so public headers include no
+>   existing header.
+> - **Enables.** No re-export costs, and no existing headers, macros, or Boost
+>   in module interfaces.
+> - **Not now.** Every value type would need a wrapper and a copy at each
+>   boundary, against the constraint on duplicated code, and modules don't
+>   require it (Decision 4).
+> - **Adopt when.** A re-exported type needs a new representation, or a module
+>   interface must not reach existing headers.
 
 ### 2. Implemented over existing code, replaced type by type
 
@@ -298,17 +298,18 @@ Strict alternative: own every type.
   the existing API may become an adapter over it, as v1 is over v2. This is
   optional.
 
-Strict alternative: wrapped routines read no process-wide switch.
-
-- **How.** Each switch a wrapped routine reads, such as stereo perception's
-  environment variable (`Chirality.cpp:2658,2919`), becomes a parameter that
-  defaults to the switch for existing callers.
-- **Enables.** New-API behavior independent of environment variables and other
-  libraries' settings, closing the open question on switches, and differential
-  tests that pin both behaviors in one process.
-- **Not now.** It changes existing code routine by routine, and which routines
-  get wrapped isn't decided.
-- **Adopt when.** The first wrapped routine reads a switch.
+> [!NOTE]
+> **Strict alternative: wrapped routines read no process-wide switch.**
+>
+> - **How.** Each switch a wrapped routine reads, such as stereo perception's
+>   environment variable (`Chirality.cpp:2658,2919`), becomes a parameter that
+>   defaults to the switch for existing callers.
+> - **Enables.** New-API behavior independent of environment variables and other
+>   libraries' settings, closing the open question on switches, and differential
+>   tests that pin both behaviors in one process.
+> - **Not now.** It changes existing code routine by routine, and which routines
+>   get wrapped isn't decided.
+> - **Adopt when.** The first wrapped routine reads a switch.
 
 ### 3. A new directory with an enforced boundary
 
@@ -329,15 +330,16 @@ Strict alternative: wrapped routines read no process-wide switch.
   - RDKit splits first and the wrapped code becomes its own project;
   - it stops linking `librdkit`'s molecule code.
 
-Strict alternative: build against an installed RDKit.
-
-- **How.** A CI job installs RDKit and configures the new directory on its own
-  with `find_package(rdkit)`, so it sees only installed headers and exported
-  targets.
-- **Enables.** A split whenever a trigger fires, with build-tree dependencies
-  caught in CI.
-- **Not now.** A second configure and build in CI while no split is planned.
-- **Adopt when.** A split trigger becomes likely.
+> [!NOTE]
+> **Strict alternative: build against an installed RDKit.**
+>
+> - **How.** A CI job installs RDKit and configures the new directory on its own
+>   with `find_package(rdkit)`, so it sees only installed headers and exported
+>   targets.
+> - **Enables.** A split whenever a trigger fires, with build-tree dependencies
+>   caught in CI.
+> - **Not now.** A second configure and build in CI while no split is planned.
+> - **Adopt when.** A split trigger becomes likely.
 
 ### 4. Headers now, modules later
 
@@ -352,6 +354,18 @@ CI checks from the start keep headers ready for modules:
 - Components have no dependency cycles, since modules can't import in a cycle,
   and each maps to one future module.
 - The include boundary from Decision 3 holds.
+
+> [!NOTE]
+> **Strict alternative: lint internal linkage.**
+>
+> - **How.** Public headers declare no namespace-scope `static` function or
+>   variable, and their namespace-scope constants are `inline constexpr`.
+> - **Enables.** Headers compile attached to a named module, as modules first
+>   needs.
+> - **Not now.** Wrapped headers don't need it ([evidence](#c-modules-today)),
+>   and MSVC is unchecked.
+> - **Adopt when.** Modules first is chosen, or a compiler rejects a wrapped
+>   exposure. New headers make it nearly free to adopt early.
 
 Consequences:
 
@@ -374,33 +388,23 @@ Consequences:
   - the feedstock builds with Ninja.
 - `import std;` waits until CMake's support for it isn't experimental.
 
-Strict alternative: modules first.
-
-- **How.** Named module interfaces attached to `rdkit.v3.*` modules from the
-  start, with existing headers only in implementation units or global module
-  fragments, CMake 3.28+ with Ninja or Visual Studio for every build, and the
-  internal-linkage lint below.
-- **Enables.** Wrapped types are reachable but unnameable, so wrappers inline
-  without pimpl, and importers see neither macros nor existing names.
-- **Not now.** conda-forge builds with `make` and `NMake Makefiles JOM`, and
-  Apple's clang 21 rejects `export module`. An entity attached to a named module
-  also can't be declared in a header
-  ([basic.link](https://eel.is/c++draft/basic.link)) and gets a different
-  symbol, so SWIG, MinimalLib, and the cartridge would need a separate
-  interface.
-- **Adopt when.** The adoption conditions above hold and every consumer of the
-  new API can import modules.
-
-Strict alternative: lint internal linkage.
-
-- **How.** Public headers declare no namespace-scope `static` function or
-  variable, and their namespace-scope constants are `inline constexpr`.
-- **Enables.** Headers compile attached to a named module, as modules first
-  needs.
-- **Not now.** Wrapped headers don't need it ([evidence](#c-modules-today)), and
-  MSVC is unchecked.
-- **Adopt when.** Modules first is chosen, or a compiler rejects a wrapped
-  exposure. New headers make it nearly free to adopt early.
+> [!NOTE]
+> **Strict alternative: modules first.**
+>
+> - **How.** Named module interfaces attached to `rdkit.v3.*` modules from the
+>   start, with existing headers only in implementation units or global module
+>   fragments, CMake 3.28+ with Ninja or Visual Studio for every build, and the
+>   internal-linkage lint above.
+> - **Enables.** Wrapped types are reachable but unnameable, so wrappers inline
+>   without pimpl, and importers see neither macros nor existing names.
+> - **Not now.** conda-forge builds with `make` and `NMake Makefiles JOM`, and
+>   Apple's clang 21 rejects `export module`. An entity attached to a named
+>   module also can't be declared in a header
+>   ([basic.link](https://eel.is/c++draft/basic.link)) and gets a different
+>   symbol, so SWIG, MinimalLib, and the cartridge would need a separate
+>   interface.
+> - **Adopt when.** The adoption conditions above hold and every consumer of the
+>   new API can import modules.
 
 ### 5. Packaging
 
@@ -413,17 +417,18 @@ Strict alternative: lint internal linkage.
 - As a separate project, the new API would get its own feedstock, as
   `pydantic-core` has.
 
-Strict alternative: a stable C++ ABI.
-
-- **How.** Version the new API's shared library by ABI, check each release with
-  an ABI checker such as libabigail, and pin dependents to a compatible range
-  instead of an exact build.
-- **Enables.** C++ packages built against the new API that survive RDKit
-  releases without rebuilds, and a later release schedule of its own.
-- **Not now.** The API is changing, and exact pins keep one feedstock simple
-  (Decision 3).
-- **Adopt when.** The API is declared stable, or a split trigger makes separate
-  releases likely.
+> [!NOTE]
+> **Strict alternative: a stable C++ ABI.**
+>
+> - **How.** Version the new API's shared library by ABI, check each release
+>   with an ABI checker such as libabigail, and pin dependents to a compatible
+>   range instead of an exact build.
+> - **Enables.** C++ packages built against the new API that survive RDKit
+>   releases without rebuilds, and a later release schedule of its own.
+> - **Not now.** The API is changing, and exact pins keep one feedstock simple
+>   (Decision 3).
+> - **Adopt when.** The API is declared stable, or a split trigger makes
+>   separate releases likely.
 
 ### 6. `rdkit.v3`
 
@@ -466,19 +471,20 @@ Strict alternative: a stable C++ ABI.
   re-exports are the only places `rdkit.v3` names existing types, and the
   existing API never depends on `rdkit.v3`.
 
-Strict alternative: a separate nanobind domain.
-
-- **How.** Build `rdkit.v3` with `NB_DOMAIN`, which gives it its own nanobind
-  library and type registry (nanobind 2.15.0
-  `cmake/nanobind-config.cmake:425-437`), and convert molecules through a copy
-  that passes no bound object, such as RDKit's binary pickle.
-- **Enables.** Binding any C++ type, re-exports included, under PEP 8 names with
-  no import-order effects, and changing nanobind versions independently.
-- **Not now.** Conversion couldn't take an existing `Mol` directly, and a
-  re-exported type would get a second Python class that existing functions
-  reject.
-- **Adopt when.** `rdkit.v3` ships apart from the existing wrappers or needs its
-  own nanobind version.
+> [!NOTE]
+> **Strict alternative: a separate nanobind domain.**
+>
+> - **How.** Build `rdkit.v3` with `NB_DOMAIN`, which gives it its own nanobind
+>   library and type registry (nanobind 2.15.0
+>   `cmake/nanobind-config.cmake:425-437`), and convert molecules through a copy
+>   that passes no bound object, such as RDKit's binary pickle.
+> - **Enables.** Binding any C++ type, re-exports included, under PEP 8 names
+>   with no import-order effects, and changing nanobind versions independently.
+> - **Not now.** Conversion couldn't take an existing `Mol` directly, and a
+>   re-exported type would get a second Python class that existing functions
+>   reject.
+> - **Adopt when.** `rdkit.v3` ships apart from the existing wrappers or needs
+>   its own nanobind version.
 
 ## Top-level imports
 

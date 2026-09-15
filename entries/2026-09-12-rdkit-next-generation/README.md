@@ -78,6 +78,30 @@ dependencies come from each `rdkit_library()` call's `LINK_LIBRARIES`.
   change behavior too, just not a shared type's invariants
   ([Decision 1](#1-the-new-api-exposes-only-its-own-types)).
 
+### What existing code can do to a molecule
+
+- `const` doesn't mean unchanged. `RDProps` keeps properties in a
+  `mutable Dict`, "a quirk of history" (`RDProps.h:19-20`), so `setProp`,
+  `clearProp`, and `clearComputedProps` are `const`.
+- `getRingInfo() const` returns a non-const `RingInfo *` (`ROMol.h:774`), which
+  `findSSSR`, `fastFindRings`, and `findRingFamilies` fill from a
+  `const ROMol &` (`MolOps.h:867-886`).
+- `MolToSmiles` takes a `const ROMol &` and stores `_smilesAtomOutputOrder` and
+  `_smilesBondOutputOrder` on it (`SmilesWrite.cpp:747-750`).
+- A stale cache fails when read: `getNumImplicitHs()` checks at runtime that
+  `calcImplicitValence()` has run (`Atom.cpp:305-307`).
+- In Python, `Chem.SanitizeMol`, `Chem.Kekulize`, `Chem.SetAromaticity`,
+  `Chem.AssignStereochemistry`, and `AllChem.EmbedMolecule` change their
+  argument in place.
+- Behavior changes have shipped as process-wide switches. 2022.09 added a
+  global flag for new stereo perception
+  ([rdkit#5309](https://github.com/rdkit/rdkit/pull/5309)), and 2023.03 removed
+  the per-call `SmilesParserParams.useLegacyStereo` in its favor.
+- The flag is an environment variable, `RDK_USE_LEGACY_STEREO_PERCEPTION`: the
+  setter calls `setenv`, and every query reads it back
+  (`Chirality.cpp:848-858`). Legacy perception is still the default
+  (`Chirality.h:37-39`), and non-tetrahedral stereo is switched the same way.
+
 ### RDKit's nanobind port
 
 - [rdkit#9030](https://github.com/rdkit/rdkit/pull/9030), merged 2026-08-11,
@@ -89,6 +113,10 @@ dependencies come from each `rdkit_library()` call's `LINK_LIBRARIES`.
 - Modules use `nanobind_add_module(... NB_SHARED ...)` without `NB_DOMAIN`
   (`RDKitUtils.cmake:228`), so extension modules see each other's bound types.
   nanobind is pinned to 2.x ([rdkit#9535](https://github.com/rdkit/rdkit/pull/9535)).
+- With shared types, each C++ type has one Python class. Binding a type again
+  warns and returns the existing class (nanobind 2.15.0
+  `src/nb_type.cpp:1323-1339`), and `ROMol` is bound as `Mol`
+  (`GraphMol/nbWrap/Mol.cpp:426`).
 - The discussion that started the port ([rdkit#9031](https://github.com/rdkit/rdkit/discussions/9031))
   reported two to five times lower wrapper overhead than Boost.Python in early
   `Point2D` benchmarks.
@@ -170,11 +198,39 @@ behind both surfaces. What doesn't:
 
 - It names no existing type. Anything it inherits (a type, a function, a
   default) is an explicit, recorded decision.
-- A namespace can change behavior but not a shared type's invariants. Member
-  functions aren't namespaced, and an `RWMol` can pass through existing
-  functions and return in a state the new API forbids.
 - New types hold existing objects privately, as wrappers rather than `using`
   aliases. Existing objects enter only through explicit conversion.
+
+Why:
+
+- **A shared type can't gain rules.** Existing code keeps working, so a shared
+  molecule must keep allowing every state existing code builds and relies on. A
+  rule the new API wants, such as the July hydrogen model's rule that hydrogens
+  are always graph nodes, needs a type existing code can't reach.
+- **Nothing guards a shared molecule.** Namespaces change free functions, not
+  member functions, and `const` functions change molecules too: writing a
+  SMILES adds properties, and ring finding fills ring info
+  ([evidence](#what-existing-code-can-do-to-a-molecule)). An `RWMol` can pass
+  through existing functions and return in a state the new API forbids, so the
+  new API would recheck its rules on every entry. An owned type checks once, at
+  conversion, and after that only its own methods change it.
+- **Global switches don't mix.** RDKit shipped new stereo perception behind an
+  environment variable in 2022.09, removing the per-call parser option, and it
+  is still off by default. A switch applies to every library in the process,
+  the same limit on mixing TensorFlow's generations. With owned types, both
+  behaviors run in one process and meet at conversion.
+- **Python gets its own classes.** The extension modules share bound types, so
+  a C++ type has one Python class ([evidence](#rdkits-nanobind-port)). Exposing
+  `ROMol` would make `rdkit.v3` return `rdkit.Chem.Mol` with its CamelCase
+  methods, leaving no class for Decision 6's PEP 8 names.
+- **Later changes stay possible.** Decision 2 replaces implementations behind
+  types, but through an alias `ROMol`'s members become API, down to
+  `getTopology()` returning a Boost Graph Library graph (`ROMol.h:877`). If
+  C++20 can make "forgot to sanitize" a compile error, that state lives in the
+  type, and a shared `RWMol` has no room for it.
+
+The cost is Decision 4's non-inlined call per access and Decision 6's copy at
+conversion.
 
 ### 2. Implemented over existing code, replaced type by type
 
@@ -189,7 +245,8 @@ behind both surfaces. What doesn't:
 ### 3. A new directory with an enforced boundary
 
 - The new API gets a top-level directory beside `Code/`, as its own CMake
-  project built from the root behind an option.
+  project built from the root behind an option that is on by default from the
+  start.
 - CI enforces the boundary. Public headers include only new-API headers, the
   standard library, and existing headers explicitly approved under Decision 1;
   implementation files may include any existing header.
@@ -252,6 +309,8 @@ Consequences:
 
 - The Python subpackage is `rdkit.v3`, with headers under `rdkit/v3/` and any
   future C++ modules named `rdkit.v3.*`.
+- At the start the new API is reached only by importing `rdkit.v3` explicitly.
+  Exposing it from the top level comes later ([Deferred](#deferred)).
 - Why `v3`:
   - it stays accurate once it is the recommended API;
   - it follows `RDKit::v1` (the original C++ API) and `RDKit::v2` (2024.03);
@@ -344,6 +403,10 @@ Revisiting the top-level imports must preserve:
   force-field code that reaches `GraphMol` only through `Snapshot`.
 - When the nanobind build becomes the default upstream and on conda-forge, since
   `rdkit.v3` waits on it.
+- How `rdkit.v3` keeps process-wide switches read by the code it wraps from
+  changing its behavior. Stereo perception reads an environment variable on
+  every call, and the SMILES parser's per-call option was removed in its favor
+  ([evidence](#what-existing-code-can-do-to-a-molecule)).
 - Stubs and pickling for `rdkit.v3`: nanobind's stub generator or the recipe's
   `pybind11-stubgen`.
 - What configures RDKit's C++ logging when only `rdkit.v3` is imported.

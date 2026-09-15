@@ -67,19 +67,19 @@ under `Code/`. Non-binding rows skip files named `*test*`, `*catch*`, or
 `*bench*` and the `Demos`, `Fuzz`, `Bench`, and `RDBoost` directories. Link
 dependencies come from each `rdkit_library()` call's `LINK_LIBRARIES`.
 
-Most code is written against `ROMol` and `RWMol`. The boundary is blurry: the
-generic force-field core and `Numerics/Optimizer` reach `GraphMol` only through
-`Trajectory/Snapshot.h`, which needs only `Geometry`, while the MMFF and UFF
-terms include molecule headers directly.
+- Most code is written against `ROMol` and `RWMol`.
+- The boundary is blurry: the generic force-field core and `Numerics/Optimizer`
+  reach `GraphMol` only through `Trajectory/Snapshot.h`, which needs only
+  `Geometry`, while the MMFF and UFF terms include molecule headers directly.
 
 ### RDKit's `v2` C++ API
 
-Since 2024.03.1, nine parser and supplier headers declare a `v2` namespace
-beside an `inline namespace v1` whose functions call v2
-(`FileParsers.h:131-139`, `SmilesParse.h:132`), and the release notes keep v1
-supported "for the forseeable future". Both share `RWMol`, so nothing is
-duplicated, and v2 changes ownership and parameter passing but keeps v1's
-defaults.
+- Since 2024.03.1, nine parser and supplier headers declare a `v2` namespace
+  beside an `inline namespace v1` whose functions call v2
+  (`FileParsers.h:131-139`, `SmilesParse.h:132`). The release notes keep v1
+  supported "for the forseeable future".
+- Both share `RWMol`, so nothing is duplicated; v2 changes ownership and
+  parameter passing but keeps v1's defaults.
 
 ### What existing code can do to a molecule
 
@@ -109,38 +109,47 @@ defaults.
 - [rdkit#9030](https://github.com/rdkit/rdkit/pull/9030), merged 2026-08-11, put
   an `nbWrap/` beside each of the 59 `Wrap/` directories, `rdBase` included
   (`Code/RDBoost/nbWrap/RDBase.cpp`), and both builds run the same Python tests.
-  A build uses one: Boost.Python is on by default, nanobind is off, and enabling
-  both is a CMake error. The discussion that started the port
-  ([rdkit#9031](https://github.com/rdkit/rdkit/discussions/9031)) reported two
-  to five times lower wrapper overhead in early `Point2D` benchmarks.
+- A build uses one: Boost.Python is on by default, nanobind is off, and enabling
+  both is a CMake error.
 - Modules use `nanobind_add_module(... NB_SHARED ...)` without `NB_DOMAIN`
   (`RDKitUtils.cmake:228`), so they share bound types; nanobind is pinned to 2.x
-  ([rdkit#9535](https://github.com/rdkit/rdkit/pull/9535)). A C++ type therefore
-  has one Python class: binding it again warns, returns the class registered
-  first, sets no module attribute, and adds the second binding's methods to that
-  class (nanobind 2.15.0 `src/nb_type.cpp:1323-1339,1665`,
-  `include/nanobind/nb_class.h:666-688`). `ROMol` is bound as `Mol`
-  (`GraphMol/nbWrap/Mol.cpp:426`).
+  ([rdkit#9535](https://github.com/rdkit/rdkit/pull/9535)).
+- A C++ type therefore has one Python class. Binding it again warns, returns the
+  class registered first, sets no module attribute, and adds the second
+  binding's methods to that class (nanobind 2.15.0
+  `src/nb_type.cpp:1323-1339,1665`, `include/nanobind/nb_class.h:666-688`).
+  `ROMol` is bound as `Mol` (`GraphMol/nbWrap/Mol.cpp:426`).
+- The discussion that started the port
+  ([rdkit#9031](https://github.com/rdkit/rdkit/discussions/9031)) reported two
+  to five times lower wrapper overhead than Boost.Python in early `Point2D`
+  benchmarks.
 
 ### How TensorFlow and pydantic ship two generations
 
-- TensorFlow, a C++ core under a Python API and the closer analog, gave `tf` to
-  the new API and kept 1.x as `tf.compat.v1`; release 1.14 added `tf.compat.v2`
-  so libraries could publish code that runs on both. The `tf_export` decorator
-  records each symbol's v1 and v2 names, and both namespaces are generated from
-  those records, so unchanged symbols are written once. Mixing is limited: the
-  generations differ in process-wide runtime behaviors, and eager execution can
-  be switched only once per program.
-- pydantic 2.13.4 bundles a frozen 13,166-line copy of pydantic 1.10.26 as
-  `pydantic.v1`, and 1.10.17 added the same namespace to the 1.x line as a
-  bridge. Its engine ships separately as `pydantic-core`, and its migration
-  guide says V1 and V2 models can't be mixed.
+TensorFlow, a C++ core under a Python API, is the closer analog:
 
-One package and one implementation behind both surfaces carry over. The rest
-doesn't: existing top-level names can't go to the new API, no bridge release is
-needed because existing names never move, Decision 1 avoids process-wide
-switches, and a frozen copy of RDKit's C++ would duplicate everything and track
-compilers, Boost, Python, and NumPy.
+- TensorFlow 2 gave `tf` to the new API and kept 1.x as `tf.compat.v1`; release
+  1.14 added `tf.compat.v2` so libraries could publish code that runs on both.
+- The `tf_export` decorator records each symbol's v1 and v2 names, and both
+  namespaces are generated from those records, so unchanged symbols are written
+  once.
+- Mixing is limited: the generations differ in process-wide runtime behaviors,
+  and eager execution can be switched only once per program.
+
+pydantic 2.13.4 bundles a frozen 13,166-line copy of pydantic 1.10.26 as
+`pydantic.v1`, and 1.10.17 added the same namespace to the 1.x line as a bridge.
+Its engine ships separately as `pydantic-core`, and its migration guide says V1
+and V2 models can't be mixed.
+
+One package and one implementation behind both surfaces carry over. What
+doesn't:
+
+- existing top-level names for the new API, which the constraint on existing
+  code rules out;
+- a bridge release, unneeded because existing names never move;
+- process-wide switches, which Decision 1 avoids;
+- a frozen copy, which would duplicate all of RDKit's C++ and track compilers,
+  Boost, Python, and NumPy.
 
 ### C++ modules today
 
@@ -154,8 +163,7 @@ compilers, Boost, Python, and NumPy.
   rejects `export module` under `-std=c++20`. RDKit requires CMake 3.18 and
   builds as C++20.
 - Compiled module interfaces are compiler- and flag-specific, so libraries ship
-  interface sources. Macros don't cross `import`; of 520 headers, 53 use
-  `PRECONDITION`, 20 `CHECK_INVARIANT`, and 7 `BOOST_LOG`.
+  interface sources.
 - Existing headers can be wrapped. Included in a global module fragment
   (`module;` before `export module`), their declarations stay in the global
   module, and `export using` publishes chosen names; included after
@@ -163,6 +171,8 @@ compilers, Boost, Python, and NumPy.
   `librdkit`. The `std` modules of libc++, libstdc++, and MSVC's STL all start
   with `module;` (`std.cppm.in:14`, `std.cc.in:24`, `std.ixx:5`, fetched
   2026-09-15).
+- Macros don't cross `import`. Of 520 headers, 53 use `PRECONDITION`, 20
+  `CHECK_INVARIANT`, and 7 `BOOST_LOG`.
 - A module interface can't expose an internal-linkage entity, such as a
   namespace-scope `static` function, from inline code or declarations; reading
   an internal constant's value is exempt, and `static` members take their
@@ -184,9 +194,10 @@ compilers, Boost, Python, and NumPy.
   - A module wrapping `ROMol.h` and `SmilesParse.h` in a global module fragment
     compiles on both. Its importer parses a SMILES without naming `RWMol` and,
     on Clang, links against `librdkit` and runs; naming `RDKit::ROMol` there
-    fails on both. GCC warns 30 times that the wrapped headers expose internal
-    constants, 27 from Boost and 3 from RDKit (`RDTypeTag::AnyTag`,
-    `zero_tolerance`); Clang reports none.
+    fails on both.
+  - GCC warns 30 times that the wrapped headers expose internal constants, 27
+    from Boost and 3 from RDKit (`RDTypeTag::AnyTag`, `zero_tolerance`); Clang
+    reports none.
   - A function attached to a named module gets a module-specific symbol
     (`_ZW8attached6answerv`); a wrapped one keeps its ordinary symbol.
   - Wrapped, GCC warns when an inline function uses an internal function or a
@@ -200,10 +211,11 @@ compilers, Boost, Python, and NumPy.
   `runtime`), `librdkit-dev` (`dev`), and `rdkit` (`extras`, `python`, the
   `stubs` target, and a `pip install` for `.dist-info`) install by CMake
   component; `rdkit-dev` is an alias, and `rdkit-postgresql` runs the
-  cartridge's install script. `librdkit` is pinned exactly through
-  `run_exports`, and every dependent pins it exactly.
-- The generators, `make` and `NMake Makefiles JOM`, don't scan modules. The
-  compilers are `gxx` 15, conda-forge's `clangxx` 21 (not AppleClang), and
+  cartridge's install script.
+- `librdkit` is pinned exactly through `run_exports`, and every dependent pins
+  it exactly.
+- The generators, `make` and `NMake Makefiles JOM`, don't scan modules.
+- The compilers are `gxx` 15, conda-forge's `clangxx` 21 (not AppleClang), and
   `vs2022`; `linux-aarch64`, `linux-ppc64le`, and `osx-arm64` are
   cross-compiled.
 - `rdkit` builds the Boost.Python wrappers (`libboost-python-devel` in `host`)
@@ -224,10 +236,10 @@ cheap.
   molecule, atoms, and bonds are the expected cases, along with any type whose
   public members reach them, such as `Conformer` (`getOwningMol()`,
   `Conformer.h:91`) and `StereoGroup` (`Atom *` members, `StereoGroup.h:47`).
-  Existing objects enter owned types only through explicit conversion.
 - A type used unchanged, such as a point or a bit vector, can be re-exported.
   Each re-export, like any inherited function or default, is an explicit,
   recorded decision.
+- Existing objects enter owned types only through explicit conversion.
 
 Why own a type whose rules change:
 
@@ -253,39 +265,50 @@ Why own a type whose rules change:
 
 Owning costs Decision 4's non-inlined call per access and Decision 6's copy at
 conversion. A re-export avoids both and lets old and new code share objects, at
-a recorded price: its header joins the public headers (Decision 3),
-argument-dependent lookup finds its namespace's free functions for new-API
-callers, its implementation can't be replaced without breaking new-API code
-(Decision 2), and in Python it keeps its existing class and names unless
-`rdkit.v3` wraps it (Decision 6).
+a recorded price:
 
-**Strict alternative: own every type.** *How:* wrap points and bit vectors too,
-so public headers include no existing header. *Enables:* none of a re-export's
-costs, and module interfaces that never pull in existing headers, their macros,
-or Boost. *Not now:* every value type would need a wrapper and a copy at each
-boundary, against the constraint on duplicated code, and modules don't require
-it (Decision 4). *Adopt when:* a re-exported type needs a new representation, or
-a module interface must not reach existing headers.
+- its header joins the public headers (Decision 3);
+- argument-dependent lookup finds its namespace's free functions for new-API
+  callers;
+- its implementation can't be replaced without breaking new-API code (Decision
+  2);
+- in Python it keeps its existing class and names unless `rdkit.v3` wraps it
+  (Decision 6).
+
+Strict alternative: own every type.
+
+- **How.** Wrap points and bit vectors too, so public headers include no
+  existing header.
+- **Enables.** No re-export costs, and no existing headers, macros, or Boost in
+  module interfaces.
+- **Not now.** Every value type would need a wrapper and a copy at each
+  boundary, against the constraint on duplicated code, and modules don't require
+  it (Decision 4).
+- **Adopt when.** A re-exported type needs a new representation, or a module
+  interface must not reach existing headers.
 
 ### 2. Implemented over existing code, replaced type by type
 
 - A new type starts with existing code behind it and gets a new implementation
   only when the existing representation can't hold what the API needs (an
-  unknown coordinate, say) or measurement shows it is too slow. Duplication
-  stays limited to what each replacement forces, and a clean-room rewrite stays
-  possible without being paid for up front.
+  unknown coordinate, say) or measurement shows it is too slow.
+- Duplication stays limited to what each replacement forces, and a clean-room
+  rewrite stays possible without being paid for up front.
 - If differential tests show a replacement reproduces existing behavior exactly,
   the existing API may become an adapter over it, as v1 is over v2. This is
   optional.
 
-**Strict alternative: wrapped routines read no process-wide switch.** *How:*
-each switch a wrapped routine reads, such as stereo perception's environment
-variable (`Chirality.cpp:2658,2919`), becomes a parameter that defaults to the
-switch for existing callers. *Enables:* new-API behavior independent of
-environment variables and other libraries' settings, closing the open question
-on switches, and differential tests that pin both behaviors in one process. *Not
-now:* it changes existing code routine by routine, and which routines get
-wrapped isn't decided. *Adopt when:* the first wrapped routine reads a switch.
+Strict alternative: wrapped routines read no process-wide switch.
+
+- **How.** Each switch a wrapped routine reads, such as stereo perception's
+  environment variable (`Chirality.cpp:2658,2919`), becomes a parameter that
+  defaults to the switch for existing callers.
+- **Enables.** New-API behavior independent of environment variables and other
+  libraries' settings, closing the open question on switches, and differential
+  tests that pin both behaviors in one process.
+- **Not now.** It changes existing code routine by routine, and which routines
+  get wrapped isn't decided.
+- **Adopt when.** The first wrapped routine reads a switch.
 
 ### 3. A new directory with an enforced boundary
 
@@ -295,19 +318,26 @@ wrapped isn't decided. *Adopt when:* the first wrapped routine reads a switch.
 - CI enforces the boundary. Public headers include only new-API headers, the
   standard library, and existing headers approved under Decision 1;
   implementation files may include any existing header.
-- A directory comes first because changes to wrapped code need both test suites
-  in one CI run, the new API links the existing implementation, and one tarball
-  means one feedstock, with no cross-feedstock ABI pins while the API is
-  changing. It becomes a separate project if it needs its own release schedule,
-  a different group develops it, RDKit splits first and the wrapped code becomes
-  its own project, or it stops linking `librdkit`'s molecule code.
+- A directory comes first because:
+  - changes to wrapped code need both test suites in one CI run;
+  - the new API links the existing implementation;
+  - one tarball means one feedstock, with no cross-feedstock ABI pins while the
+    API is changing.
+- It becomes a separate project if:
+  - it needs its own release schedule;
+  - a different group develops it;
+  - RDKit splits first and the wrapped code becomes its own project;
+  - it stops linking `librdkit`'s molecule code.
 
-**Strict alternative: build against an installed RDKit.** *How:* a CI job
-installs RDKit and configures the new directory on its own with
-`find_package(rdkit)`, so it sees only installed headers and exported targets.
-*Enables:* a split whenever a trigger fires, with build-tree dependencies caught
-in CI. *Not now:* a second configure and build in CI while no split is planned.
-*Adopt when:* a split trigger becomes likely.
+Strict alternative: build against an installed RDKit.
+
+- **How.** A CI job installs RDKit and configures the new directory on its own
+  with `find_package(rdkit)`, so it sees only installed headers and exported
+  targets.
+- **Enables.** A split whenever a trigger fires, with build-tree dependencies
+  caught in CI.
+- **Not now.** A second configure and build in CI while no split is planned.
+- **Adopt when.** A split trigger becomes likely.
 
 ### 4. Headers now, modules later
 
@@ -315,12 +345,12 @@ CI checks from the start keep headers ready for modules:
 
 - The public API works without macros; checks and logging are functions built on
   `std::source_location`.
-- Every header compiles on its own, and components have no dependency cycles,
-  since modules can't import in a cycle; each component maps to one future
-  module.
+- Every header compiles on its own.
 - Public headers declare no anonymous namespaces, whose types GCC rejects in
   inline code even when wrapped ([evidence](#c-modules-today)). Other internal
   linkage isn't linted.
+- Components have no dependency cycles, since modules can't import in a cycle,
+  and each maps to one future module.
 - The include boundary from Decision 3 holds.
 
 Consequences:
@@ -331,36 +361,46 @@ Consequences:
   ([BGL_DECOUPLING_FINDINGS.md](../2026-07-15-rdkit-maintenance-plans/assets/BGL_DECOUPLING_FINDINGS.md)),
   and `getAtomWithIdx()` is already out of line. With modules, wrappers can
   inline.
-- Ninja and CMake 3.28 aren't needed before adopting modules. Module interface
-  files will wrap the same headers and ship beside them; the new directory sets
-  CMP0155 in its own scope while the root keeps its CMake 3.18 policies, so
-  scanning covers only the new targets and existing unity builds survive.
-- Adopt modules when conda-forge's `vs2022` toolset is 14.34+ (`gxx` 15 and
-  `clangxx` 21 already qualify), the compiler behind the macOS PyPI wheels can
-  scan modules, a wrapper module over `ROMol.h` builds on GCC, Clang, and MSVC,
-  and the feedstock builds with Ninja. `import std;` waits until CMake's support
-  for it isn't experimental.
+- Ninja and CMake 3.28 aren't needed before adopting modules.
+- Module interface files will wrap the same headers and ship beside them. The
+  new directory sets CMP0155 in its own scope while the root keeps its CMake
+  3.18 policies, so scanning covers only the new targets and existing unity
+  builds survive.
+- Adopt modules when all of these hold:
+  - conda-forge's `vs2022` toolset is 14.34+ (`gxx` 15 and `clangxx` 21 already
+    qualify);
+  - the compiler behind the macOS PyPI wheels can scan modules;
+  - a wrapper module over `ROMol.h` builds on GCC, Clang, and MSVC;
+  - the feedstock builds with Ninja.
+- `import std;` waits until CMake's support for it isn't experimental.
 
-**Strict alternative: modules first.** *How:* named module interfaces attached
-to `rdkit.v3.*` modules from the start, with existing headers only in
-implementation units or global module fragments, CMake 3.28+ with Ninja or
-Visual Studio for every build, and the internal-linkage lint below. *Enables:*
-wrapped types that are reachable but unnameable, so wrappers inline without
-pimpl, and importers that see neither macros nor existing names. *Not now:*
-conda-forge builds with `make` and `NMake Makefiles JOM`, and Apple's clang 21
-rejects `export module`. An entity attached to a named module also can't be
-declared in a header ([basic.link](https://eel.is/c++draft/basic.link)) and gets
-a different symbol, so SWIG, MinimalLib, and the cartridge would need a separate
-interface. *Adopt when:* the adoption conditions above hold and every consumer
-of the new API can import modules.
+Strict alternative: modules first.
 
-**Strict alternative: lint internal linkage.** *How:* public headers declare no
-namespace-scope `static` function or variable, and their namespace-scope
-constants are `inline constexpr`. *Enables:* headers that compile attached to a
-named module, as modules first needs. *Not now:* wrapped headers don't need it
-([evidence](#c-modules-today)), and MSVC is unchecked. *Adopt when:* modules
-first is chosen, or a compiler rejects a wrapped exposure; new headers make it
-nearly free to adopt early.
+- **How.** Named module interfaces attached to `rdkit.v3.*` modules from the
+  start, with existing headers only in implementation units or global module
+  fragments, CMake 3.28+ with Ninja or Visual Studio for every build, and the
+  internal-linkage lint below.
+- **Enables.** Wrapped types are reachable but unnameable, so wrappers inline
+  without pimpl, and importers see neither macros nor existing names.
+- **Not now.** conda-forge builds with `make` and `NMake Makefiles JOM`, and
+  Apple's clang 21 rejects `export module`. An entity attached to a named module
+  also can't be declared in a header
+  ([basic.link](https://eel.is/c++draft/basic.link)) and gets a different
+  symbol, so SWIG, MinimalLib, and the cartridge would need a separate
+  interface.
+- **Adopt when.** The adoption conditions above hold and every consumer of the
+  new API can import modules.
+
+Strict alternative: lint internal linkage.
+
+- **How.** Public headers declare no namespace-scope `static` function or
+  variable, and their namespace-scope constants are `inline constexpr`.
+- **Enables.** Headers compile attached to a named module, as modules first
+  needs.
+- **Not now.** Wrapped headers don't need it ([evidence](#c-modules-today)), and
+  MSVC is unchecked.
+- **Adopt when.** Modules first is chosen, or a compiler rejects a wrapped
+  exposure. New headers make it nearly free to adopt early.
 
 ### 5. Packaging
 
@@ -369,35 +409,43 @@ nearly free to adopt early.
   depends on the runtime, so `conda install rdkit` provides both generations;
   `librdkit` and `rdkit-postgresql` are unchanged.
 - `nanobind` joins the host requirements, and `libboost-python-devel` leaves
-  once the recipe builds the nanobind wrappers. As a separate project, the new
-  API would get its own feedstock, as `pydantic-core` has.
+  once the recipe builds the nanobind wrappers.
+- As a separate project, the new API would get its own feedstock, as
+  `pydantic-core` has.
 
-**Strict alternative: a stable C++ ABI.** *How:* version the new API's shared
-library by ABI, check each release with an ABI checker such as libabigail, and
-pin dependents to a compatible range instead of an exact build. *Enables:* C++
-packages built against the new API that survive RDKit releases without rebuilds,
-and a later release schedule of its own. *Not now:* the API is changing, and
-exact pins keep one feedstock simple (Decision 3). *Adopt when:* the API is
-declared stable, or a split trigger makes separate releases likely.
+Strict alternative: a stable C++ ABI.
+
+- **How.** Version the new API's shared library by ABI, check each release with
+  an ABI checker such as libabigail, and pin dependents to a compatible range
+  instead of an exact build.
+- **Enables.** C++ packages built against the new API that survive RDKit
+  releases without rebuilds, and a later release schedule of its own.
+- **Not now.** The API is changing, and exact pins keep one feedstock simple
+  (Decision 3).
+- **Adopt when.** The API is declared stable, or a split trigger makes separate
+  releases likely.
 
 ### 6. `rdkit.v3`
 
 - The Python subpackage is `rdkit.v3`, with headers under `rdkit/v3/` and any
-  future C++ modules named `rdkit.v3.*`. At the start it is reached only by
-  importing `rdkit.v3` explicitly; exposing it from the top level comes later
-  ([Deferred](#deferred)).
-- `v3` stays accurate once it is the recommended API, follows the parsers'
-  `RDKit::v1` and `RDKit::v2` namespaces (2024.03), matches `pydantic.v1` and
-  `tf.compat.v1`, clashes with no subpackage even ignoring case, and can't be
-  confused with RDKit's year.month releases. The docs need a sentence on why
-  Python has no `rdkit.v2`.
-- **Proposed C++ namespace: `rdkit::v3`.** Unqualified names resolve through
-  enclosing namespaces, even in out-of-line definitions, and no language feature
-  prevents that. The enclosing `rdkit` declares nothing, so existing names used
-  without `RDKit::` fail to compile, and sibling generations such as `rdkit::v4`
-  aren't searched. The only lint needed bans `using namespace RDKit` in the new
-  directory. The cost is two top-level namespaces that differ only by case; the
-  tree has no lowercase `rdkit` namespace.
+  future C++ modules named `rdkit.v3.*`.
+- At the start it is reached only by importing `rdkit.v3` explicitly; exposing
+  it from the top level comes later ([Deferred](#deferred)).
+- Why `v3`:
+  - stays accurate once it is the recommended API;
+  - follows the parsers' `RDKit::v1` and `RDKit::v2` namespaces (2024.03);
+  - matches `pydantic.v1` and `tf.compat.v1`;
+  - clashes with no subpackage, even ignoring case, and can't be confused with
+    RDKit's year.month releases.
+- The docs need a sentence on why Python has no `rdkit.v2`.
+- **Proposed C++ namespace: `rdkit::v3`.**
+  - Unqualified names resolve through enclosing namespaces, even in out-of-line
+    definitions, and no language feature prevents that. The enclosing `rdkit`
+    declares nothing, so existing names used without `RDKit::` fail to compile.
+  - Sibling generations such as `rdkit::v4` aren't searched.
+  - The only lint needed bans `using namespace RDKit` in the new directory.
+  - The cost is two top-level namespaces that differ only by case; the tree has
+    no lowercase `rdkit` namespace.
 - **Alternative: `RDKit::v3` with a linter.** It keeps one top-level namespace,
   but unqualified names fall back to `RDKit` and silently reach existing
   functions. Blocking that takes a custom Clang check (clang-query or
@@ -418,16 +466,19 @@ declared stable, or a split trigger makes separate releases likely.
   re-exports are the only places `rdkit.v3` names existing types, and the
   existing API never depends on `rdkit.v3`.
 
-**Strict alternative: a separate nanobind domain.** *How:* build `rdkit.v3` with
-`NB_DOMAIN`, which gives it its own nanobind library and type registry (nanobind
-2.15.0 `cmake/nanobind-config.cmake:425-437`), and convert molecules through a
-copy that passes no bound object, such as RDKit's binary pickle. *Enables:*
-binding any C++ type, re-exports included, under PEP 8 names with no
-import-order effects, and changing nanobind versions independently. *Not now:*
-conversion couldn't take an existing `Mol` directly, and a re-exported type
-would get a second Python class that existing functions reject. *Adopt when:*
-`rdkit.v3` ships apart from the existing wrappers or needs its own nanobind
-version.
+Strict alternative: a separate nanobind domain.
+
+- **How.** Build `rdkit.v3` with `NB_DOMAIN`, which gives it its own nanobind
+  library and type registry (nanobind 2.15.0
+  `cmake/nanobind-config.cmake:425-437`), and convert molecules through a copy
+  that passes no bound object, such as RDKit's binary pickle.
+- **Enables.** Binding any C++ type, re-exports included, under PEP 8 names with
+  no import-order effects, and changing nanobind versions independently.
+- **Not now.** Conversion couldn't take an existing `Mol` directly, and a
+  re-exported type would get a second Python class that existing functions
+  reject.
+- **Adopt when.** `rdkit.v3` ships apart from the existing wrappers or needs its
+  own nanobind version.
 
 ## Top-level imports
 
@@ -440,7 +491,8 @@ Importing `rdkit` or any subpackage, `rdkit.v3` included, runs
 - under Jupyter or Colab, imports `rdkit.Chem.Draw.IPythonConsole` (and with it
   `rdkit.Chem`, `rdchem`, `rdChemReactions`, and `rdMolDraw2D`) and sends RDKit
   logs to stderr;
-- configures the `rdkit` logger and patches iteration on `rdBase` vector types.
+- configures the `rdkit` logger;
+- patches iteration on `rdBase` vector types.
 
 A revision must keep all of this, including `rdkit.rdBase` without a separate
 import, `rdBase` loading before other extension modules, and notebook rendering
@@ -455,11 +507,12 @@ share bound types.
 ### Deferred
 
 - **`from rdkit import Mol`.** Re-exporting only adds names, so this stays
-  possible, with two limits: a new top-level name can't reuse a subpackage's
-  name, since importing `rdkit.Geometry` would overwrite a class `Geometry`, and
-  a new top-level module can't be a lowercase version of an existing one, since
-  `rdkit/geometry` and `rdkit/Geometry` are one directory on default macOS and
-  Windows filesystems.
+  possible, with two limits:
+  - a new top-level name can't reuse a subpackage's name, since importing
+    `rdkit.Geometry` would overwrite a class `Geometry`;
+  - a new top-level module can't be a lowercase version of an existing one,
+    since `rdkit/geometry` and `rdkit/Geometry` are one directory on default
+    macOS and Windows filesystems.
 - **Import cost.** Until `rdkit/__init__.py` changes, importing `rdkit.v3` also
   loads `rdBase` and, in notebooks, the existing drawing stack.
 

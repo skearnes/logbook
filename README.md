@@ -2,7 +2,8 @@
 
 A running work logbook. Each entry is a dated directory under
 [`entries/`](entries/), named `YYYY-MM-DD-topic/`, holding a `README.md` with
-the writeup plus any assets (images, scripts, data) for that entry.
+the writeup plus any assets (images, scripts, data) for that entry. RDKit
+entries live in [skearnes/rdkit-logbook](https://github.com/skearnes/rdkit-logbook).
 
 ## Conventions
 

@@ -45,7 +45,9 @@ From earlier feedback:
 - Little duplicated code, and no clean-room rewrite of the core (Decision 2).
 - Scope is shape and mechanics, not the new API or its routines. The July
   [hydrogen model spec](../2026-07-18-rdkit-rust-reimplementation/assets/HYDROGEN_MODEL_SPEC.md)
-  remains input to later API work.
+  is deferred indefinitely; the
+  [2026-10-17 molecule API entry](../2026-10-17-rdkit-v3-mol/README.md) keeps
+  only its two kinds of hydrogen.
 - Splitting RDKit into several projects is an option.
 
 ## Evidence
